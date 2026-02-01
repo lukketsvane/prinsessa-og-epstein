@@ -642,44 +642,34 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                   <div className="mt-3 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-3">
                     <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
                       {/* Sender Filter */}
-                      <div>
-                        <label className="text-xs text-zinc-500 mb-1.5 block">AVSENDAR</label>
-                        <select
-                          value={filterSender}
-                          onChange={(e) => setFilterSender(e.target.value)}
-                          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
-                        >
-                          <option value="all">Alle</option>
-                          <option value="KRONPRINSESSEN">Kronprinsessen</option>
-                          <option value="EPSTEIN">Epstein</option>
-                          <option value="BORIS NIKOLIC">Boris Nikolic</option>
-                        </select>
-                      </div>
+                      <select
+                        value={filterSender}
+                        onChange={(e) => setFilterSender(e.target.value)}
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
+                      >
+                        <option value="all">Alle</option>
+                        <option value="KRONPRINSESSEN">Kronprinsessen</option>
+                        <option value="EPSTEIN">Epstein</option>
+                        <option value="BORIS NIKOLIC">Boris Nikolic</option>
+                      </select>
 
                       {/* Date Range */}
-                      <div>
-                        <label className="text-xs text-zinc-500 mb-1.5 block">FRÅ DATO</label>
-                        <input
-                          type="date"
-                          value={dateRange.start}
-                          onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
-                        />
-                      </div>
-                      <div>
-                        <label className="text-xs text-zinc-500 mb-1.5 block">TIL DATO</label>
-                        <input
-                          type="date"
-                          value={dateRange.end}
-                          onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
-                        />
-                      </div>
+                      <input
+                        type="date"
+                        value={dateRange.start}
+                        onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
+                      />
+                      <input
+                        type="date"
+                        value={dateRange.end}
+                        onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
+                      />
                     </div>
 
                     {/* View Mode Toggle */}
                     <div className="flex items-center gap-2 pt-2 border-t border-zinc-800">
-                      <span className="text-xs text-zinc-500 mr-2">VISNING:</span>
                       <button
                         onClick={() => setViewMode('list')}
                         className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
