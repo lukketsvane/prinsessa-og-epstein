@@ -202,11 +202,28 @@ export default function App() {
   const [viewMode, setViewMode] = useState<'list' | 'timeline' | 'thread'>('list');
   const [threadContext, setThreadContext] = useState<EmailRecord[]>([]);
   const [sidebarSection, setSidebarSection] = useState<'inbox' | 'highlights'>('inbox');
-  const [showSidebar, setShowSidebar] = useState(true);
+  const [showSidebar, setShowSidebar] = useState(false);
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [chatbotMinimized, setChatbotMinimized] = useState(false);
+  const [isLargeScreen, setIsLargeScreen] = useState(false);
 
   const chatRef = useRef<any>(null);
+
+  // Handle responsive layout - switch to mobile view on resize
+  useEffect(() => {
+    const handleResize = () => {
+      const large = window.innerWidth >= 1024;
+      setIsLargeScreen(large);
+      // On mobile, sidebar is hidden by default
+      if (!large) {
+        setShowSidebar(false);
+        setChatbotOpen(false);
+      }
+    };
+    handleResize(); // Check on mount
+    window.addEventListener('resize', handleResize);
+    return () => window.removeEventListener('resize', handleResize);
+  }, []);
   const scrollRef = useRef<HTMLDivElement>(null);
 
   const records = useMemo(() => parseCSV(KNOWLEDGE_BASE_CSV), []);
