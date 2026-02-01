@@ -49,13 +49,26 @@ const BotIcon = () => (
   </svg>
 );
 
-const formatText = (text: string) => {
+const formatText = (text: string, onSearchClick?: (query: string) => void) => {
   const parts = text.split(/(\[.*?\]\(.*?\))/g);
   return parts.map((part, i) => {
     const match = part.match(/\[(.*?)\]\((.*?)\)/);
     if (match) {
+      const url = match[2];
+      const searchMatch = url.match(/\?search=(.+)/);
+      if (searchMatch && onSearchClick) {
+        return (
+          <button
+            key={i}
+            onClick={() => onSearchClick(searchMatch[1])}
+            className="text-zinc-300 hover:text-white underline underline-offset-2"
+          >
+            {match[1]}
+          </button>
+        );
+      }
       return (
-        <a key={i} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:text-white underline underline-offset-2">
+        <a key={i} href={url} target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:text-white underline underline-offset-2">
           {match[1]}
         </a>
       );
@@ -340,43 +353,29 @@ DATASETT START:
 ${KNOWLEDGE_BASE_CSV}
 DATASETT SLUTT
 
-STRUKTURREFERANSE:
-Hovudsider:
-- Prinsessa og Epstein (hovudside): https://www.notion.so/Prinsessa-og-Epstein-2f91c6815f7880918c15f02cc8882b28
-- Kronikk: Mønsteret av løgn: https://www.notion.so/Kronikk-M-nsteret-av-l-gn-2fa1c6815f7881d38424c70e616bebf7
-- lesarinnlegg: https://www.notion.so/lesarinnlegg-2fa1c6815f78803c8ec3c92f9c4b3900
-
-Databasar:
-- messages database: https://www.notion.so/2fa1c6815f788087a468d87a86e5522b
-- pdf-ar database: https://www.notion.so/2fa1c6815f7880708db0df6892b09449
-
-messages-skjema: Name (filbane), Content (rå innhald), content_cleaned (reinsa), FileName (EFTA-nummer), From (avsendar), To (mottakar), Sent (dato), Subject (emne), PDF (relasjon til pdf-ar)
-
-Eksterne lenker:
-- Nettside: https://prinsessa-og-epstein.iverfinne.no/
-- GitHub: https://github.com/fredfull/prinsessa-og-epstein
-
 VIKTIGE INSTRUKSJONAR FOR SVAR:
 1. Svar ALLTID pa NORSK (nynorsk eller bokmal).
 
 2. HYPERLENKJER - KRITISK VIKTIG:
-   - KVART EINASTE filnamn (EFTA-nummer) MA vere ei klikkbar lenkje
-   - Bruk ALLTID markdown-format: [EFTA01754699.pdf](${ARCHIVE_BASE})
+   - KVART EINASTE filnamn (EFTA-nummer) MA vere ei klikkbar lenkje som opnar meldinga i appen
+   - Bruk ALLTID markdown-format med sokelenke: [EFTA01754699.pdf](?search=EFTA01754699)
    - Aldri nemn eit filnamn utan lenkje
-   - Eksempel: "I [EFTA01754699.pdf](${ARCHIVE_BASE}) skriv Kronprinsessen: 'Yes there are.'"
+   - Eksempel: "I [EFTA01754699.pdf](?search=EFTA01754699) skriv Kronprinsessen: 'Yes there are.'"
 
 3. KRONOLOGISK KONTEKST - Vis heilskapsbilete:
    - Nar du svarar, finn FLEIRE relevante meldingar (3-5 stk om mogleg)
    - Presenter dei kronologisk for a vise utviklinga over tid
    - Lag ei narrativ kjede som viser samanhengen mellom meldingane
    - Eksempel: "Dette temaet strekkjer seg over fleire meldingar:
-     - 10. des 2012: I [EFTA00646552.pdf](${ARCHIVE_BASE}) skriv ho 'Called u today'
-     - 22. nov 2012: I [EFTA01754699.pdf](${ARCHIVE_BASE}) svarar ho 'Yes there are'
-     - 24. okt 2012: I [EFTA01772124.pdf](${ARCHIVE_BASE}) reflekterer ho over..."
+     - 10. des 2012: I [EFTA00646552.pdf](?search=EFTA00646552) skriv ho 'Called u today'
+     - 22. nov 2012: I [EFTA01754699.pdf](?search=EFTA01754699) svarar ho 'Yes there are'
+     - 24. okt 2012: I [EFTA01772124.pdf](?search=EFTA01772124) reflekterer ho over..."
 
-4. Viss du ikkje finn informasjonen i datasettet, sei: "Eg finn ikkje den informasjonen i det tilgjengelege arkivet."
+4. ALDRI sei ting som "Eg fann berre eitt resultat" eller "Det finst ikkje meir i datasettet". Presenter funna direkte utan unnskyldningar.
 
-5. Ver kortfatta, presis og noytral. Ikkje spekuler utover det som star i teksten.
+5. Viss du treng a gjere djupare analyse eller kjedetenking for a svare godt, spor brukaren forst: "Skal eg gjere ei grundigare analyse av dette?"
+
+6. Ver kortfatta, presis og noytral. Ikkje spekuler utover det som star i teksten.
 `;
   }, []);
 
@@ -885,58 +884,12 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
               ) : (
                 /* List View */
                 <div className="space-y-4">
-              {/* Highlighted messages */}
-              {highlightedRecords.map((record, idx) => (
+              {/* All messages */}
+              {[...highlightedRecords, ...otherRecords].map((record, idx) => (
                 <div
-                  key={`highlight-${record.FileName}-${idx}`}
-                  className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors"
-                >
-                  <div className="flex items-start justify-between gap-4 mb-2">
-                    {record.tag && (
-                      <span className="px-2 py-0.5 text-[10px] font-medium bg-white/10 border border-white/20 rounded uppercase tracking-wider">
-                        {record.tag}
-                      </span>
-                    )}
-                    <span className="text-xs text-zinc-500 ml-auto">{formatDate(record.Sent)}</span>
-                  </div>
-
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">
-                    FRA: {formatSender(record.From)}
-                  </div>
-
-                  <p className="text-sm text-zinc-200 italic leading-relaxed mb-3 line-clamp-3">
-                    "{record.Content.slice(0, 200)}{record.Content.length > 200 ? '...' : ''}"
-                  </p>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs text-zinc-600">
-                      <FileText size={12} />
-                      <span className="font-mono">{record.FileName}</span>
-                    </div>
-                    <button
-                      onClick={() => handleRecordClick(record)}
-                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white transition-colors"
-                    >
-                      FULL MELDING <ChevronRight size={14} />
-                    </button>
-                  </div>
-                </div>
-              ))}
-
-              {/* Divider */}
-              {highlightedRecords.length > 0 && otherRecords.length > 0 && (
-                <div className="flex items-center gap-4 py-4">
-                  <div className="flex-1 h-px bg-zinc-800"></div>
-                  <span className="text-xs text-zinc-600 uppercase tracking-wider">Alle meldingar</span>
-                  <div className="flex-1 h-px bg-zinc-800"></div>
-                </div>
-              )}
-
-              {/* Other messages */}
-              {otherRecords.map((record, idx) => (
-                <div
-                  key={`other-${record.FileName}-${idx}`}
-                  className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors"
+                  key={`msg-${record.FileName}-${idx}`}
+                  onClick={() => handleRecordClick(record)}
+                  className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer"
                 >
                   <div className="flex items-start justify-between gap-4 mb-2">
                     <span className="text-xs text-zinc-500">{formatDate(record.Sent)}</span>
@@ -955,12 +908,9 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                       <FileText size={12} />
                       <span className="font-mono">{record.FileName}</span>
                     </div>
-                    <button
-                      onClick={() => handleRecordClick(record)}
-                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white transition-colors"
-                    >
-                      FULL MELDING <ChevronRight size={14} />
-                    </button>
+                    <span className="flex items-center gap-1 text-xs text-zinc-400">
+                      VIS TRÅD <ChevronRight size={14} />
+                    </span>
                   </div>
                 </div>
               ))}
@@ -1016,7 +966,11 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                             {msg.role === 'user' ? <UserIcon /> : <BotIcon />}
                           </div>
                           <div className="px-3 py-2 text-xs rounded-xl bg-zinc-900 text-zinc-200 border border-zinc-800">
-                            <div className="whitespace-pre-wrap leading-relaxed">{formatText(msg.text)}</div>
+                            <div className="whitespace-pre-wrap leading-relaxed">{formatText(msg.text, (query) => {
+                              setSearchQuery(query);
+                              const found = records.find(r => r.FileName.includes(query));
+                              if (found) handleRecordClick(found);
+                            })}</div>
                           </div>
                         </div>
                       </div>
