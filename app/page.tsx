@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { GoogleGenAI } from "@google/genai";
 import { KNOWLEDGE_BASE_CSV } from './constants';
 import { Message, LoadingState } from './types';
-import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink, Filter, Calendar, MessageSquare } from 'lucide-react';
+import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink, Filter, Calendar, MessageSquare, Inbox, Star, Menu, Minimize2, Maximize2 } from 'lucide-react';
 
 const ARCHIVE_BASE = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb";
 
@@ -188,7 +188,6 @@ function getConversationThread(records: EmailRecord[], targetRecord: EmailRecord
 }
 
 export default function App() {
-  const [mode, setMode] = useState<'search' | 'chat'>('search');
   const [messages, setMessages] = useState<Message[]>([]);
   const [inputValue, setInputValue] = useState('');
   const [loadingState, setLoadingState] = useState<LoadingState>(LoadingState.IDLE);
@@ -202,6 +201,10 @@ export default function App() {
   const [showFilters, setShowFilters] = useState(false);
   const [viewMode, setViewMode] = useState<'list' | 'timeline' | 'thread'>('list');
   const [threadContext, setThreadContext] = useState<EmailRecord[]>([]);
+  const [sidebarSection, setSidebarSection] = useState<'inbox' | 'highlights'>('inbox');
+  const [showSidebar, setShowSidebar] = useState(true);
+  const [chatbotOpen, setChatbotOpen] = useState(false);
+  const [chatbotMinimized, setChatbotMinimized] = useState(false);
 
   const chatRef = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -409,27 +412,30 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
   return (
     <div className="flex flex-col h-screen bg-black text-white font-sans">
       {/* Header */}
-      <header className="flex items-center justify-between px-4 py-3 border-b border-white/10">
-        <span className="text-sm font-medium tracking-tight">prinsessa og epstein</span>
+      <header className="flex items-center gap-4 px-4 py-3 border-b border-zinc-800">
+        <button
+          onClick={() => setShowSidebar(!showSidebar)}
+          className="lg:hidden p-2 hover:bg-zinc-800 rounded-lg transition-colors"
+        >
+          <Menu size={20} />
+        </button>
 
-        {/* Mode Toggle */}
-        <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-800">
-          <button
-            onClick={() => setMode('search')}
-            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
-              mode === 'search' ? 'bg-white text-black' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            SOK
-          </button>
-          <button
-            onClick={() => setMode('chat')}
-            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
-              mode === 'chat' ? 'bg-white text-black' : 'text-zinc-400 hover:text-white'
-            }`}
-          >
-            CHAT
-          </button>
+        <div className="flex items-center gap-2">
+          <span className="text-base font-semibold tracking-tight">prinsessa og epstein</span>
+        </div>
+
+        {/* Search Bar */}
+        <div className="flex-1 max-w-2xl">
+          <div className="relative">
+            <Search className="absolute left-3 top-1/2 -translate-y-1/2 text-zinc-500" size={16} />
+            <input
+              type="text"
+              value={searchQuery}
+              onChange={(e) => setSearchQuery(e.target.value)}
+              placeholder="Søk i meldingar..."
+              className="w-full pl-10 pr-4 py-2 bg-zinc-900 border border-zinc-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-700 text-sm text-white placeholder-zinc-500"
+            />
+          </div>
         </div>
 
         <div className="flex items-center gap-1">
@@ -611,83 +617,83 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
         </div>
       )}
 
-      {/* Main Content */}
-      {mode === 'search' ? (
-        <>
-          {/* Search Input & Filters */}
-          <div className="border-b border-zinc-800">
-            <div className="p-4">
-              <div className="max-w-4xl mx-auto">
-                <div className="relative flex gap-2">
-                  <div className="flex-1 relative">
-                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-                    <input
-                      type="text"
-                      value={searchQuery}
-                      onChange={(e) => setSearchQuery(e.target.value)}
-                      placeholder="Semantisk søk i meldingar..."
-                      className="w-full pl-12 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-full focus:outline-none focus:ring-1 focus:ring-white text-white placeholder-zinc-500"
-                    />
-                  </div>
-                  <button
-                    onClick={() => setShowFilters(!showFilters)}
-                    className={`px-4 py-3 rounded-full border transition-colors ${showFilters ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-600'}`}
-                  >
-                    <Filter size={18} />
-                  </button>
-                </div>
+      {/* Main Layout */}
+      <div className="flex flex-1 overflow-hidden">
+        {/* Sidebar */}
+        <aside className={`${showSidebar ? 'w-64' : 'w-0'} lg:w-64 border-r border-zinc-800 flex-shrink-0 transition-all overflow-hidden`}>
+          <div className="p-4 space-y-1">
+            <button
+              onClick={() => setSidebarSection('inbox')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                sidebarSection === 'inbox' ? 'bg-zinc-900 text-white' : 'text-zinc-400 hover:bg-zinc-900/50 hover:text-white'
+              }`}
+            >
+              <Inbox size={18} />
+              <span className="text-sm font-medium">Alle meldingar</span>
+              <span className="ml-auto text-xs text-zinc-600">{records.length}</span>
+            </button>
 
-                {/* Filter Panel */}
-                {showFilters && (
-                  <div className="mt-3 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-3">
-                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
-                      {/* Sender Filter */}
-                      <select
-                        value={filterSender}
-                        onChange={(e) => setFilterSender(e.target.value)}
-                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
-                      >
-                        <option value="all">Alle</option>
-                        <option value="KRONPRINSESSEN">Kronprinsessen</option>
-                        <option value="EPSTEIN">Epstein</option>
-                        <option value="BORIS NIKOLIC">Boris Nikolic</option>
-                      </select>
+            <button
+              onClick={() => setSidebarSection('highlights')}
+              className={`w-full flex items-center gap-3 px-3 py-2 rounded-lg transition-colors ${
+                sidebarSection === 'highlights' ? 'bg-zinc-900 text-white' : 'text-zinc-400 hover:bg-zinc-900/50 hover:text-white'
+              }`}
+            >
+              <Star size={18} />
+              <span className="text-sm font-medium">Høgdepunkt</span>
+              <span className="ml-auto text-xs text-zinc-600">{HIGHLIGHTS.length}</span>
+            </button>
+          </div>
 
-                      {/* Date Range */}
-                      <input
-                        type="date"
-                        value={dateRange.start}
-                        onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
-                      />
-                      <input
-                        type="date"
-                        value={dateRange.end}
-                        onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                        className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
-                      />
-                    </div>
+          {/* Filters */}
+          <div className="p-4 border-t border-zinc-800">
+            <div className="space-y-2">
+              <div className="text-[10px] uppercase tracking-wider text-zinc-600 mb-2">Filter</div>
 
-                    {/* View Mode Toggle */}
-                    <div className="flex items-center gap-2 pt-2 border-t border-zinc-800">
-                      <button
-                        onClick={() => setViewMode('list')}
-                        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
-                      >
-                        Liste
-                      </button>
-                      <button
-                        onClick={() => setViewMode('timeline')}
-                        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewMode === 'timeline' ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
-                      >
-                        Tidslinje
-                      </button>
-                    </div>
-                  </div>
-                )}
+              <select
+                value={filterSender}
+                onChange={(e) => setFilterSender(e.target.value)}
+                className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
+              >
+                <option value="all">Alle avsendarar</option>
+                <option value="KRONPRINSESSEN">Kronprinsessen</option>
+                <option value="EPSTEIN">Epstein</option>
+                <option value="BORIS NIKOLIC">Boris Nikolic</option>
+              </select>
+
+              <input
+                type="date"
+                value={dateRange.start}
+                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                placeholder="Frå dato"
+                className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
+              />
+
+              <input
+                type="date"
+                value={dateRange.end}
+                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                placeholder="Til dato"
+                className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
+              />
+
+              <div className="flex gap-1 pt-2">
+                <button
+                  onClick={() => setViewMode('list')}
+                  className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${viewMode === 'list' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
+                >
+                  Liste
+                </button>
+                <button
+                  onClick={() => setViewMode('timeline')}
+                  className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${viewMode === 'timeline' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
+                >
+                  Tidslinje
+                </button>
               </div>
             </div>
           </div>
+        </aside>
 
           {/* Search Results */}
           <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
@@ -843,90 +849,123 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
               )}
             </div>
           </div>
-        </>
-      ) : (
-        <>
-          {/* Chat Area */}
-          <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-hide">
-            <div className="max-w-4xl mx-auto space-y-6">
-              {messages.map((msg) => (
-                <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
-                  <div className={`flex max-w-[90%] sm:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'} space-x-3`}>
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-1 border bg-zinc-900 border-zinc-800 text-zinc-400">
-                      {msg.role === 'user' ? <UserIcon /> : <BotIcon />}
-                    </div>
-                    <div className={`relative px-5 py-3 text-sm shadow-sm rounded-2xl bg-zinc-900 text-zinc-200 border border-zinc-800 ${
-                      msg.role === 'user' ? 'rounded-tr-none' : 'rounded-tl-none'
-                    }`}>
-                      <div className="whitespace-pre-wrap leading-relaxed">{formatText(msg.text)}</div>
-                      <div className="text-[10px] mt-2 opacity-50 text-zinc-500">
-                        {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
-                      </div>
-                    </div>
-                  </div>
-                </div>
-              ))}
+        </div>
+      </div>
 
-              {loadingState === LoadingState.LOADING && (
-                <div className="flex w-full justify-start">
-                  <div className="flex flex-row space-x-3">
-                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-300 flex items-center justify-center mt-1">
-                      <BotIcon />
-                    </div>
-                    <div className="bg-zinc-900 border border-zinc-800 px-5 py-3 rounded-2xl rounded-tl-none flex items-center space-x-2">
-                      <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
-                      <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
-                      <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
-                    </div>
-                  </div>
-                </div>
-              )}
-
-              {/* Example Prompts */}
-              {messages.length === 1 && (
-                <div className="pt-4">
-                  <p className="text-xs text-zinc-500 mb-3">Forslag til sporsmal:</p>
-                  <div className="flex flex-wrap gap-2">
-                    {EXAMPLE_PROMPTS.map((prompt, i) => (
-                      <button
-                        key={i}
-                        onClick={() => handleSendMessage(prompt)}
-                        className="px-3 py-2 text-xs bg-zinc-900 border border-zinc-800 rounded-lg hover:border-zinc-600 hover:bg-zinc-800 transition-colors text-zinc-300"
-                      >
-                        {prompt}
-                      </button>
-                    ))}
-                  </div>
-                </div>
-              )}
-
-              <div ref={scrollRef} />
-            </div>
-          </div>
-
-          {/* Input Area */}
-          <div className="flex-none p-4 border-t border-zinc-800">
-            <div className="max-w-4xl mx-auto">
-              <form onSubmit={handleFormSubmit} className="relative flex items-center">
-                <input
-                  type="text"
-                  value={inputValue}
-                  onChange={(e) => setInputValue(e.target.value)}
-                  placeholder="Spor om e-postane..."
-                  className="w-full pl-5 pr-14 py-3.5 bg-zinc-900 border border-zinc-800 rounded-full focus:outline-none focus:ring-1 focus:ring-white text-white placeholder-zinc-500"
-                  disabled={loadingState === LoadingState.LOADING}
-                />
+      {/* Floating Chatbot (Large Screens Only) */}
+      {chatbotOpen && (
+        <div className="hidden lg:block fixed bottom-4 right-4 z-50">
+          <div className={`bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl transition-all ${
+            chatbotMinimized ? 'w-80 h-14' : 'w-96 h-[600px]'
+          }`}>
+            {/* Chat Header */}
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <div className="flex items-center gap-2">
+                <MessageSquare size={16} className="text-zinc-400" />
+                <span className="text-sm font-medium">Chatbot</span>
+              </div>
+              <div className="flex items-center gap-1">
                 <button
-                  type="submit"
-                  disabled={!inputValue.trim() || loadingState === LoadingState.LOADING}
-                  className="absolute right-2 p-2.5 bg-white text-black rounded-full hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                  onClick={() => setChatbotMinimized(!chatbotMinimized)}
+                  className="p-1.5 hover:bg-zinc-800 rounded transition-colors"
                 >
-                  <Send size={18} />
+                  {chatbotMinimized ? <Maximize2 size={14} /> : <Minimize2 size={14} />}
                 </button>
-              </form>
+                <button
+                  onClick={() => setChatbotOpen(false)}
+                  className="p-1.5 hover:bg-zinc-800 rounded transition-colors"
+                >
+                  <X size={14} />
+                </button>
+              </div>
             </div>
+
+            {!chatbotMinimized && (
+              <>
+                {/* Chat Messages */}
+                <div className="flex-1 overflow-y-auto p-4 h-[480px] scrollbar-hide">
+                  <div className="space-y-4">
+                    {messages.map((msg) => (
+                      <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                        <div className={`flex max-w-[85%] ${msg.role === 'user' ? 'flex-row-reverse' : 'flex-row'} gap-2`}>
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full flex items-center justify-center bg-zinc-900 border border-zinc-800">
+                            {msg.role === 'user' ? <UserIcon /> : <BotIcon />}
+                          </div>
+                          <div className="px-3 py-2 text-xs rounded-xl bg-zinc-900 text-zinc-200 border border-zinc-800">
+                            <div className="whitespace-pre-wrap leading-relaxed">{formatText(msg.text)}</div>
+                          </div>
+                        </div>
+                      </div>
+                    ))}
+
+                    {loadingState === LoadingState.LOADING && (
+                      <div className="flex justify-start">
+                        <div className="flex gap-2">
+                          <div className="flex-shrink-0 w-6 h-6 rounded-full bg-zinc-900 border border-zinc-800 flex items-center justify-center">
+                            <BotIcon />
+                          </div>
+                          <div className="bg-zinc-900 border border-zinc-800 px-3 py-2 rounded-xl flex items-center gap-1">
+                            <div className="w-1 h-1 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                            <div className="w-1 h-1 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                            <div className="w-1 h-1 bg-zinc-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                          </div>
+                        </div>
+                      </div>
+                    )}
+
+                    {messages.length === 1 && (
+                      <div className="space-y-2">
+                        <p className="text-[10px] text-zinc-600 uppercase tracking-wider">Forslag</p>
+                        {EXAMPLE_PROMPTS.slice(0, 3).map((prompt, i) => (
+                          <button
+                            key={i}
+                            onClick={() => handleSendMessage(prompt)}
+                            className="w-full text-left px-3 py-2 text-xs bg-zinc-900 border border-zinc-800 rounded-lg hover:border-zinc-600 transition-colors text-zinc-300"
+                          >
+                            {prompt}
+                          </button>
+                        ))}
+                      </div>
+                    )}
+
+                    <div ref={scrollRef} />
+                  </div>
+                </div>
+
+                {/* Chat Input */}
+                <div className="p-3 border-t border-zinc-800">
+                  <form onSubmit={handleFormSubmit} className="relative">
+                    <input
+                      type="text"
+                      value={inputValue}
+                      onChange={(e) => setInputValue(e.target.value)}
+                      placeholder="Spør om e-postane..."
+                      className="w-full pl-3 pr-10 py-2 bg-zinc-900 border border-zinc-800 rounded-lg focus:outline-none focus:ring-1 focus:ring-zinc-700 text-sm text-white placeholder-zinc-500"
+                      disabled={loadingState === LoadingState.LOADING}
+                    />
+                    <button
+                      type="submit"
+                      disabled={!inputValue.trim() || loadingState === LoadingState.LOADING}
+                      className="absolute right-2 top-1/2 -translate-y-1/2 p-1.5 bg-white text-black rounded-lg hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                    >
+                      <Send size={14} />
+                    </button>
+                  </form>
+                </div>
+              </>
+            )}
           </div>
-        </>
+        </div>
+      )}
+
+      {/* Chatbot Toggle Button */}
+      {!chatbotOpen && (
+        <button
+          onClick={() => setChatbotOpen(true)}
+          className="hidden lg:flex fixed bottom-6 right-6 w-14 h-14 bg-white text-black rounded-full items-center justify-center shadow-lg hover:bg-gray-200 transition-all z-50"
+        >
+          <MessageSquare size={24} />
+        </button>
       )}
     </div>
   );
