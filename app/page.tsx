@@ -438,7 +438,10 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
         </button>
 
         <div className="flex items-center gap-2">
-          <span className="text-base font-semibold tracking-tight">prinsessa og epstein</span>
+          <span className="text-base font-semibold tracking-tight">
+            <span className="lg:hidden">P&E</span>
+            <span className="hidden lg:inline">prinsessa og epstein</span>
+          </span>
         </div>
 
         {/* Search Bar */}
