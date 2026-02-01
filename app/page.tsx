@@ -3,7 +3,7 @@
 import React, { useState, useEffect, useRef } from 'react'
 import Papa from 'papaparse'
 import Image from 'next/image'
-import { Search, Info, Github, Trash2, MessageCircle, Send, ExternalLink } from 'lucide-react'
+import { Search, Info, Github, Trash2, MessageCircle, Send, ExternalLink, Star } from 'lucide-react'
 import { Button } from "@/components/ui/button"
 import { Input } from "@/components/ui/input"
 import { Badge } from "@/components/ui/badge"
@@ -17,23 +17,17 @@ interface Message {
   Subject: string
   Content: string
   content_cleaned?: string
+  displayContent?: string
 }
 
-const NOTION_URL = "https://tingogtang.notion.site/Prinsessa-og-Epstein-2f91c6815f7880918c15f02cc8882b28"
+const NOTION_URL = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb&source=copy_link"
 
 // Function to clean content if content_cleaned is missing
 function cleanMessageContent(content: string): string {
   if (!content) return ''
-  
-  // Remove XML/Plist snippets
   let cleaned = content.replace(/<\?xml[\s\S]*?<\/plist>/g, '')
-  
-  // Remove other common metadata patterns seen in the user's example
   cleaned = cleaned.replace(/\d+\s+EFTA_R1_\d+\s+EFTA\d+/g, '')
-  
-  // Clean up excessive whitespace
   cleaned = cleaned.replace(/\s+/g, ' ').trim()
-  
   return cleaned
 }
 
@@ -56,24 +50,30 @@ export default function ChatPage() {
               ...m,
               displayContent: m.content_cleaned || cleanMessageContent(m.Content)
             }))
-            setMessages(data as any)
+            setMessages(data)
           }
         })
       })
   }, [])
 
-  const handleSearch = (e?: React.FormEvent) => {
+  const handleSearch = (e?: React.FormEvent, overrideQuery?: string) => {
     e?.preventDefault()
-    if (!query.trim()) return
+    const searchTerm = overrideQuery !== undefined ? overrideQuery : query
     
-    const term = query.toLowerCase()
-    const filtered = messages.filter((m: any) => 
+    if (!searchTerm.trim()) return
+    
+    const term = searchTerm.toLowerCase()
+    const filtered = messages.filter((m) => 
       m.displayContent?.toLowerCase().includes(term) || 
       m.From?.toLowerCase().includes(term) ||
       m.Subject?.toLowerCase().includes(term)
     )
     setResults(filtered)
     setHasSearched(true)
+    
+    if (overrideQuery !== undefined) {
+      setQuery(overrideQuery)
+    }
   }
 
   const clear = () => {
@@ -82,23 +82,80 @@ export default function ChatPage() {
     setHasSearched(false)
   }
 
+  // Curated highlights based on user input
+  const highlights = [
+    {
+      title: "Tapetdiskusjonen",
+      date: "13. nov. 2012",
+      from: "Kronprinsessen",
+      content: "Is it inappropriate for a mother to suggest two naked women carrying a surfboard for my 15 yr old sons wallpaper ?",
+      responseFrom: "Epstein",
+      response: "let them decide, mother should stay out of it.",
+      file: "EFTA01764058.pdf"
+    },
+    {
+      title: "Invitasjon til øya",
+      date: "22. okt. 2013",
+      from: "Boris Nikolic",
+      content: "Lets all of us go to jee's island to recover on a sun",
+      file: "EFTA02576070.pdf"
+    },
+    {
+      title: "Woody Allen-referansen",
+      date: "7. jan. 2014",
+      from: "Epstein",
+      content: "Woody Allen at my house for a week",
+      responseFrom: "Kronprinsessen",
+      response: "well that must have been a neurotic experience for the two of you ;)",
+      file: "EFTA00980215.pdf"
+    },
+    {
+      title: "Pale Fire",
+      date: "Jan. 2014",
+      from: "Kronprinsessen",
+      content: "Im reading pale fire",
+      file: "EFTA00680541.pdf"
+    },
+    {
+      title: "Den intime tonen",
+      date: "24. okt. 2011",
+      from: "Kronprinsessen",
+      content: "Every day is a constant struggle of scratching the soul just Enough to still be able to chose the light",
+      file: "EFTA01772124.pdf"
+    },
+    {
+      title: "Paris & Savn",
+      date: "22. nov. 2013",
+      from: "Kronprinsessen",
+      content: "I miss paris. We need to talk soon",
+      file: "EFTA00627041.pdf"
+    },
+    {
+        title: "Siste kjente kontakt",
+        date: "23. juni 2014",
+        from: "Epstein",
+        content: "??9",
+        file: "EFTA00991747.pdf"
+    }
+  ]
+
   return (
-    <div className="flex flex-col h-screen bg-black text-zinc-100 selection:bg-zinc-800">
+    <div className="flex flex-col h-screen bg-black text-zinc-100 selection:bg-zinc-800 font-sans antialiased">
       {/* Header */}
       <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-900 bg-black/50 backdrop-blur-md z-30">
         <h1 className="text-sm font-medium tracking-tight text-zinc-400 uppercase tracking-[0.2em]">prinsessa og epstein</h1>
         <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" asChild title="Kilde">
             <a href={NOTION_URL} target="_blank" rel="noreferrer">
               <Info size={18} />
             </a>
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" asChild>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" asChild title="GitHub">
             <a href="https://github.com/lukketsvane/prinsessa-og-epstein" target="_blank" rel="noreferrer">
               <Github size={18} />
             </a>
           </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" onClick={clear}>
+          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" onClick={clear} title="Tøm søk">
             <Trash2 size={18} />
           </Button>
         </div>
@@ -109,12 +166,64 @@ export default function ChatPage() {
         <ScrollArea className="h-full w-full">
           <div className="w-full max-w-4xl mx-auto px-6 pb-32">
             {!hasSearched ? (
-              <div className="pt-12 space-y-12 animate-in fade-in duration-1000">
-  
+              <div className="pt-12 space-y-16 animate-in fade-in duration-1000">
+                {/* Banner Integration */}
 
-                <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
+                {/* Highlights Section */}
+                <section className="space-y-8">
 
+                  
+                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
+                    {highlights.map((h, i) => (
+                      <div 
+                        key={i} 
+                        className="bg-zinc-900/40 border border-zinc-800/50 rounded-2xl p-6 hover:border-zinc-700 transition-all group cursor-pointer" 
+                        onClick={() => handleSearch(undefined, h.content.substring(0, 40))}
+                      >
+                        <div className="flex justify-between items-start mb-4">
+                          <Badge variant="outline" className="text-[9px] border-zinc-800 text-zinc-500 uppercase px-2 py-0">{h.title}</Badge>
+                          <span className="text-[10px] font-mono text-zinc-600">{h.date}</span>
+                        </div>
+                        
+                        <div className="text-[10px] uppercase text-zinc-500 font-bold tracking-tighter mb-2">
+                          Fra: {h.from}
+                        </div>
 
+                        <div className="space-y-4 mb-4">
+                          <p className="text-base font-serif italic text-zinc-300 leading-relaxed">
+                            "{h.content}"
+                          </p>
+                          {h.response && (
+                            <div className="space-y-1 border-l border-zinc-800 pl-4 py-1">
+                              <div className="text-[9px] uppercase text-zinc-600 font-bold">{h.responseFrom}:</div>
+                              <p className="text-xs text-zinc-400 font-serif italic">
+                                "{h.response}"
+                              </p>
+                            </div>
+                          )}
+                        </div>
+
+                        <div className="flex justify-between items-center mt-auto">
+                          <span className="text-[9px] text-zinc-700 font-mono">
+                            {h.file}
+                          </span>
+                          <span className="text-[9px] text-zinc-500 uppercase font-bold opacity-0 group-hover:opacity-100 transition-opacity">Full melding →</span>
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </section>
+
+                <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 opacity-50">
+                  <div className="p-4 rounded-full bg-zinc-900/50 border border-zinc-800">
+                    <Search size={32} className="text-zinc-500" strokeWidth={1.5} />
+                  </div>
+                  <div className="space-y-2">
+                    <h3 className="text-lg font-medium text-zinc-200 uppercase tracking-widest">Fullstendig arkiv</h3>
+                    <p className="text-zinc-500 max-w-xs mx-auto text-xs leading-relaxed">
+                      Bruk søkefeltet nedenfor for å finne spesifikke dokumenter blant 529 meldinger.
+                    </p>
+                  </div>
                 </div>
               </div>
             ) : (
@@ -123,6 +232,7 @@ export default function ChatPage() {
                   <h2 className="text-xs uppercase tracking-widest text-zinc-500 font-bold">
                     Resultater: <span className="text-zinc-200 ml-1">{results.length} funnet</span>
                   </h2>
+                  <Button variant="ghost" size="sm" onClick={clear} className="text-xs text-zinc-500 h-8">Nullstill</Button>
                 </div>
 
                 <div className="grid gap-6">
@@ -178,7 +288,7 @@ export default function ChatPage() {
           <Button 
             variant="outline" 
             size="icon" 
-            className="rounded-full h-12 w-12 bg-zinc-950 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 shadow-2xl transition-all active:scale-90 group"
+            className="rounded-full h-12 w-12 bg-zinc-950 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 shadow-2xl transition-all active:scale-90 group"
             asChild
           >
             <a href={NOTION_URL} target="_blank" rel="noreferrer">
