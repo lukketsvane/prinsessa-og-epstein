@@ -1,328 +1,690 @@
-'use client'
+'use client';
 
-import React, { useState, useEffect, useRef } from 'react'
-import Papa from 'papaparse'
-import Image from 'next/image'
-import { Search, Info, Github, Trash2, MessageCircle, Send, ExternalLink, Star } from 'lucide-react'
-import { Button } from "@/components/ui/button"
-import { Input } from "@/components/ui/input"
-import { Badge } from "@/components/ui/badge"
-import { ScrollArea } from "@/components/ui/scroll-area"
+import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react';
+import { GoogleGenAI } from "@google/genai";
+import { KNOWLEDGE_BASE_CSV } from './constants';
+import { Message, LoadingState } from './types';
+import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink } from 'lucide-react';
 
-interface Message {
-  FileName: string
-  From: string
-  To: string
-  Sent: string
-  Subject: string
-  Content: string
-  content_cleaned?: string
-  displayContent?: string
+const ARCHIVE_BASE = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb";
+
+interface EmailRecord {
+  Path: string;
+  FileName: string;
+  From: string;
+  To: string;
+  Sent: string;
+  Subject: string;
+  Content: string;
+  tag?: string;
+  notionPageId?: string;
 }
 
-const NOTION_URL = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb&source=copy_link"
+const HIGHLIGHTS: { fileName: string; tag: string; notionPageId: string }[] = [
+  { fileName: 'EFTA00646552.pdf', tag: 'GOOGLA EPSTEIN', notionPageId: '2fa1c6815f7881e1a48be871dfec3e1b' },
+  { fileName: 'EFTA01772124.pdf', tag: 'DEN INTIME TONEN', notionPageId: '2fa1c6815f7881bdb083f3fb64ced5d8' },
+  { fileName: 'EFTA01764058.pdf', tag: 'TAPETDISKUSJONEN', notionPageId: '2fa1c6815f78810596a1c88a5afa8079' },
+  { fileName: 'EFTA00980215.pdf', tag: 'WOODY ALLEN-REFERANSEN', notionPageId: '2fa1c6815f7881fb9db3f5f8aeb82a1f' },
+  { fileName: 'EFTA00680541.pdf', tag: 'PALE FIRE', notionPageId: '2fa1c6815f788127b44ac25a0b1b00c8' },
+  { fileName: 'EFTA00627041.pdf', tag: 'PARIS & SAVN', notionPageId: '2fa1c6815f7881a4b555f7a020d22848' },
+];
 
-// Function to clean content if content_cleaned is missing
-function cleanMessageContent(content: string): string {
-  if (!content) return ''
-  let cleaned = content.replace(/<\?xml[\s\S]*?<\/plist>/g, '')
-  cleaned = cleaned.replace(/\d+\s+EFTA_R1_\d+\s+EFTA\d+/g, '')
-  cleaned = cleaned.replace(/\s+/g, ' ').trim()
-  return cleaned
+const EXAMPLE_PROMPTS = [
+  "Når googla Mette-Marit Epstein?",
+  "Kva skreiv Epstein om Woody Allen?",
+  "Kva skreiv kronprinsessa om tapet til Marius?",
+  "Kva sa kronprinsessa om Paris?",
+  "Finst det meldingar om Pale Fire?",
+];
+
+const UserIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+    <path fillRule="evenodd" d="M7.5 6a4.5 4.5 0 119 0 4.5 4.5 0 01-9 0zM3.751 20.105a8.25 8.25 0 0116.498 0 .75.75 0 01-.437.695A18.683 18.683 0 0112 22.5c-2.786 0-5.433-.608-7.812-1.7a.75.75 0 01-.437-.695z" clipRule="evenodd" />
+  </svg>
+);
+
+const BotIcon = () => (
+  <svg xmlns="http://www.w3.org/2000/svg" viewBox="0 0 24 24" fill="currentColor" className="w-5 h-5">
+    <path fillRule="evenodd" d="M3 6a3 3 0 013-3h12a3 3 0 013 3v12a3 3 0 01-3 3H6a3 3 0 01-3-3V6zm14.25 6a.75.75 0 01-.22.53l-2.25 2.25a.75.75 0 11-1.06-1.06L15.44 12l-1.72-1.72a.75.75 0 111.06-1.06l2.25 2.25c.141.14.22.331.22.53zm-10.28-.53a.75.75 0 000 1.06l2.25 2.25a.75.75 0 101.06-1.06L7.56 12l1.72-1.72a.75.75 0 00-1.06-1.06l-2.25 2.25z" clipRule="evenodd" />
+  </svg>
+);
+
+const formatText = (text: string) => {
+  const parts = text.split(/(\[.*?\]\(.*?\))/g);
+  return parts.map((part, i) => {
+    const match = part.match(/\[(.*?)\]\((.*?)\)/);
+    if (match) {
+      return (
+        <a key={i} href={match[2]} target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:text-white underline underline-offset-2">
+          {match[1]}
+        </a>
+      );
+    }
+    return part;
+  });
+};
+
+function parseCSV(csv: string): EmailRecord[] {
+  const lines = csv.trim().split('\n');
+  if (lines.length < 2) return [];
+
+  const records: EmailRecord[] = [];
+  for (let i = 1; i < lines.length; i++) {
+    const line = lines[i];
+    const values: string[] = [];
+    let current = '';
+    let inQuotes = false;
+
+    for (let j = 0; j < line.length; j++) {
+      const char = line[j];
+      if (char === '"') {
+        inQuotes = !inQuotes;
+      } else if (char === ',' && !inQuotes) {
+        values.push(current.trim());
+        current = '';
+      } else {
+        current += char;
+      }
+    }
+    values.push(current.trim());
+
+    if (values.length >= 7) {
+      const fileName = values[1] || '';
+      const highlight = HIGHLIGHTS.find(h => h.fileName === fileName);
+      records.push({
+        Path: values[0] || '',
+        FileName: fileName,
+        From: values[2] || '',
+        To: values[3] || '',
+        Sent: values[4] || '',
+        Subject: values[5] || '',
+        Content: values[6] || '',
+        tag: highlight?.tag,
+        notionPageId: highlight?.notionPageId,
+      });
+    }
+  }
+  return records;
 }
 
-export default function ChatPage() {
-  const [messages, setMessages] = useState<Message[]>([])
-  const [results, setResults] = useState<Message[]>([])
-  const [query, setQuery] = useState('')
-  const [hasSearched, setHasSearched] = useState(false)
-  const messagesEndRef = useRef<HTMLDivElement>(null)
+function getMessageUrl(record: EmailRecord): string {
+  if (record.notionPageId) {
+    return `${ARCHIVE_BASE}&p=${record.notionPageId}&pm=s`;
+  }
+  return ARCHIVE_BASE;
+}
+
+function formatDate(dateStr: string): string {
+  try {
+    const date = new Date(dateStr);
+    if (isNaN(date.getTime())) {
+      const match = dateStr.match(/(\d{1,2})\s+\w+\s+(\d{4})/);
+      if (match) return dateStr;
+      return dateStr;
+    }
+    const months = ['jan.', 'feb.', 'mar.', 'apr.', 'mai', 'jun.', 'jul.', 'aug.', 'sep.', 'okt.', 'nov.', 'des.'];
+    const day = date.getUTCDate();
+    const month = months[date.getUTCMonth()];
+    const year = date.getUTCFullYear();
+    return `${day}. ${month} ${year}`;
+  } catch {
+    return dateStr;
+  }
+}
+
+function formatSender(from: string): string {
+  if (from.toLowerCase().includes('kronprinsessen') || from.toLowerCase().includes('kpm')) {
+    return 'KRONPRINSESSEN';
+  }
+  if (from.toLowerCase().includes('epstein') || from.toLowerCase().includes('jeffrey')) {
+    return 'EPSTEIN';
+  }
+  if (from.toLowerCase().includes('boris')) {
+    return 'BORIS NIKOLIC';
+  }
+  return from.toUpperCase().slice(0, 30);
+}
+
+export default function App() {
+  const [mode, setMode] = useState<'search' | 'chat'>('search');
+  const [messages, setMessages] = useState<Message[]>([]);
+  const [inputValue, setInputValue] = useState('');
+  const [loadingState, setLoadingState] = useState<LoadingState>(LoadingState.IDLE);
+  const [showKeyModal, setShowKeyModal] = useState(false);
+  const [apiKey, setApiKey] = useState('');
+  const [tempApiKey, setTempApiKey] = useState('');
+  const [searchQuery, setSearchQuery] = useState('');
+  const [selectedRecord, setSelectedRecord] = useState<EmailRecord | null>(null);
+
+  const chatRef = useRef<any>(null);
+  const scrollRef = useRef<HTMLDivElement>(null);
+
+  const records = useMemo(() => parseCSV(KNOWLEDGE_BASE_CSV), []);
+
+  const { highlightedRecords, otherRecords } = useMemo(() => {
+    if (!searchQuery.trim()) {
+      // Show highlights first when no search
+      const highlighted = HIGHLIGHTS.map(h => records.find(r => r.FileName === h.fileName)).filter(Boolean) as EmailRecord[];
+      const others = records.filter(r => !r.tag);
+      return { highlightedRecords: highlighted, otherRecords: others };
+    }
+    const query = searchQuery.toLowerCase();
+    const filtered = records.filter(r =>
+      r.Content.toLowerCase().includes(query) ||
+      r.Subject.toLowerCase().includes(query) ||
+      r.From.toLowerCase().includes(query) ||
+      r.To.toLowerCase().includes(query) ||
+      (r.tag && r.tag.toLowerCase().includes(query))
+    ).slice(0, 50);
+    return { highlightedRecords: [], otherRecords: filtered };
+  }, [records, searchQuery]);
+
+  const getSystemInstruction = useCallback(() => {
+    return `Du er ein objektiv dataanalytiker som har tilgang til eit spesifikt arkiv av e-postar mellom Kronprinsessen og Jeffrey Epstein (og relaterte partar).
+
+MAL:
+Hjelpe brukaren med a finne informasjon i det vedlagde CSV-datasettet.
+
+KJELDER:
+Datasettet inneheld kolonnar som "FileName", "From", "To", "Sent", "Subject", "Content".
+
+DATASETT START:
+${KNOWLEDGE_BASE_CSV}
+DATASETT SLUTT
+
+STRUKTURREFERANSE:
+Hovudsider:
+- Prinsessa og Epstein (hovudside): https://www.notion.so/Prinsessa-og-Epstein-2f91c6815f7880918c15f02cc8882b28
+- Kronikk: Mønsteret av løgn: https://www.notion.so/Kronikk-M-nsteret-av-l-gn-2fa1c6815f7881d38424c70e616bebf7
+- lesarinnlegg: https://www.notion.so/lesarinnlegg-2fa1c6815f78803c8ec3c92f9c4b3900
+
+Databasar:
+- messages database: https://www.notion.so/2fa1c6815f788087a468d87a86e5522b
+- pdf-ar database: https://www.notion.so/2fa1c6815f7880708db0df6892b09449
+
+messages-skjema: Name (filbane), Content (rå innhald), content_cleaned (reinsa), FileName (EFTA-nummer), From (avsendar), To (mottakar), Sent (dato), Subject (emne), PDF (relasjon til pdf-ar)
+
+Eksterne lenker:
+- Nettside: https://prinsessa-og-epstein.iverfinne.no/
+- GitHub: https://github.com/fredfull/prinsessa-og-epstein
+
+VIKTIGE INSTRUKSJONAR FOR SVAR:
+1. Svar ALLTID pa NORSK (nynorsk eller bokmal).
+2. Siter alltid kjelda presist ved a bruke filnamnet (t.d. EFTA01754699.pdf).
+3. Nar du siterer ein e-post, MA du lage ei lenkje til arkivet.
+   Bruk folgjande URL som base: ${ARCHIVE_BASE}
+
+   Eksempel pa korleis du skal formatere sitat:
+   "I ein e-post fra 22. november 2012 skriv Kronprinsessen: 'Yes there are.' (Kjelde: [EFTA01754699.pdf](${ARCHIVE_BASE}))"
+
+   Det er viktig at du brukar markdown-formatet [Filnamn](URL) slik at brukaren kan klikke seg vidare til det fullstendige arkivet.
+4. Viss du ikkje finn informasjonen i datasettet, sei: "Eg finn ikkje den informasjonen i det tilgjengelege arkivet."
+5. Ver kortfatta, presis og noytral. Ikkje spekuler utover det som star i teksten.
+`;
+  }, []);
+
+  const initializeChat = useCallback((key: string) => {
+    try {
+      const ai = new GoogleGenAI({ apiKey: key });
+      chatRef.current = ai.chats.create({
+        model: 'gemini-2.0-flash',
+        config: { systemInstruction: getSystemInstruction() }
+      });
+    } catch (error) {
+      console.error("Failed to initialize Gemini:", error);
+    }
+  }, [getSystemInstruction]);
+
+  const getInitialGreeting = useCallback(() => ({
+    id: 'init',
+    role: 'model' as const,
+    text: `Hei! Eg er ein assistent spesialisert pa korrespondansen mellom Kronprinsessen og Jeffrey Epstein. Eg har tilgang til ${records.length} e-postjournalar. Kva lurer du pa?`,
+    timestamp: new Date()
+  }), [records.length]);
 
   useEffect(() => {
-    fetch('/messages.csv')
-      .then(r => r.text())
-      .then(csv => {
-        Papa.parse(csv, {
-          header: true,
-          skipEmptyLines: true,
-          complete: (res) => {
-            const data = (res.data as Message[]).map(m => ({
-              ...m,
-              displayContent: m.content_cleaned || cleanMessageContent(m.Content)
-            }))
-            setMessages(data)
-          }
-        })
-      })
-  }, [])
+    setMessages([getInitialGreeting()]);
+    const defaultKey = process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+    if (defaultKey) initializeChat(defaultKey);
+  }, [getInitialGreeting, initializeChat]);
 
-  const handleSearch = (e?: React.FormEvent, overrideQuery?: string) => {
-    e?.preventDefault()
-    const searchTerm = overrideQuery !== undefined ? overrideQuery : query
-    
-    if (!searchTerm.trim()) return
-    
-    const term = searchTerm.toLowerCase()
-    const filtered = messages.filter((m) => 
-      m.displayContent?.toLowerCase().includes(term) || 
-      m.From?.toLowerCase().includes(term) ||
-      m.Subject?.toLowerCase().includes(term)
-    )
-    setResults(filtered)
-    setHasSearched(true)
-    
-    if (overrideQuery !== undefined) {
-      setQuery(overrideQuery)
+  useEffect(() => {
+    if (scrollRef.current) {
+      scrollRef.current.scrollIntoView({ behavior: 'smooth' });
     }
-  }
+  }, [messages, loadingState]);
 
-  const clear = () => {
-    setQuery('')
-    setResults([])
-    setHasSearched(false)
-  }
+  const clearChat = () => {
+    setMessages([getInitialGreeting()]);
+    setSearchQuery('');
+    setSelectedRecord(null);
+    const key = apiKey || process.env.NEXT_PUBLIC_GEMINI_API_KEY || '';
+    if (key) initializeChat(key);
+  };
 
-  // Curated highlights based on user input
-  const highlights = [
-    {
-      title: "Tapetdiskusjonen",
-      date: "13. nov. 2012",
-      from: "Kronprinsessen",
-      content: "Is it inappropriate for a mother to suggest two naked women carrying a surfboard for my 15 yr old sons wallpaper ?",
-      responseFrom: "Epstein",
-      response: "let them decide, mother should stay out of it.",
-      file: "EFTA01764058.pdf"
-    },
-    {
-      title: "Invitasjon til øya",
-      date: "22. okt. 2013",
-      from: "Boris Nikolic",
-      content: "Lets all of us go to jee's island to recover on a sun",
-      file: "EFTA02576070.pdf"
-    },
-    {
-      title: "Woody Allen-referansen",
-      date: "7. jan. 2014",
-      from: "Epstein",
-      content: "Woody Allen at my house for a week",
-      responseFrom: "Kronprinsessen",
-      response: "well that must have been a neurotic experience for the two of you ;)",
-      file: "EFTA00980215.pdf"
-    },
-    {
-      title: "Pale Fire",
-      date: "Jan. 2014",
-      from: "Kronprinsessen",
-      content: "Im reading pale fire",
-      file: "EFTA00680541.pdf"
-    },
-    {
-      title: "Den intime tonen",
-      date: "24. okt. 2011",
-      from: "Kronprinsessen",
-      content: "Every day is a constant struggle of scratching the soul just Enough to still be able to chose the light",
-      file: "EFTA01772124.pdf"
-    },
-    {
-      title: "Paris & Savn",
-      date: "22. nov. 2013",
-      from: "Kronprinsessen",
-      content: "I miss paris. We need to talk soon",
-      file: "EFTA00627041.pdf"
-    },
-    {
-        title: "Siste kjente kontakt",
-        date: "23. juni 2014",
-        from: "Epstein",
-        content: "??9",
-        file: "EFTA00991747.pdf"
+  const sortedRecords = useMemo(() => {
+    return [...records].sort((a, b) => new Date(b.Sent).getTime() - new Date(a.Sent).getTime());
+  }, [records]);
+
+  const navigateRecord = (direction: 'prev' | 'next') => {
+    if (!selectedRecord) return;
+    const currentIndex = sortedRecords.findIndex(r => r.FileName === selectedRecord.FileName);
+    const newIndex = direction === 'prev' ? currentIndex - 1 : currentIndex + 1;
+    if (newIndex >= 0 && newIndex < sortedRecords.length) {
+      setSelectedRecord(sortedRecords[newIndex]);
     }
-  ]
+  };
+
+  const saveApiKey = () => {
+    setApiKey(tempApiKey);
+    if (tempApiKey) initializeChat(tempApiKey);
+    setShowKeyModal(false);
+  };
+
+  const handleSendMessage = async (text?: string) => {
+    const messageText = text || inputValue.trim();
+    if (!messageText || loadingState === LoadingState.LOADING) return;
+
+    setInputValue('');
+    setLoadingState(LoadingState.LOADING);
+
+    const userMsg: Message = {
+      id: Date.now().toString(),
+      role: 'user',
+      text: messageText,
+      timestamp: new Date()
+    };
+    setMessages(prev => [...prev, userMsg]);
+
+    try {
+      if (!chatRef.current) throw new Error("Chat session not initialized");
+      const response = await chatRef.current.sendMessage({ message: messageText });
+      const botMsg: Message = {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: response.text,
+        timestamp: new Date()
+      };
+      setMessages(prev => [...prev, botMsg]);
+      setLoadingState(LoadingState.IDLE);
+    } catch (error) {
+      console.error("Error sending message:", error);
+      setMessages(prev => [...prev, {
+        id: (Date.now() + 1).toString(),
+        role: 'model',
+        text: "Eg opplevde ein feil under behandlinga. Vennlegst sjekk konfigurasjonen din.",
+        timestamp: new Date()
+      }]);
+      setLoadingState(LoadingState.ERROR);
+    }
+  };
+
+  const handleFormSubmit = (e: React.FormEvent) => {
+    e.preventDefault();
+    handleSendMessage();
+  };
 
   return (
-    <div className="flex flex-col h-screen bg-black text-zinc-100 selection:bg-zinc-800 font-sans antialiased">
+    <div className="flex flex-col h-screen bg-black text-white font-sans">
       {/* Header */}
-      <header className="flex items-center justify-between px-6 py-4 border-b border-zinc-900 bg-black/50 backdrop-blur-md z-30">
-        <h1 className="text-sm font-medium tracking-tight text-zinc-400 uppercase tracking-[0.2em]">prinsessa og epstein</h1>
-        <div className="flex items-center gap-2">
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" asChild title="Kilde">
-            <a href={NOTION_URL} target="_blank" rel="noreferrer">
-              <Info size={18} />
-            </a>
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" asChild title="GitHub">
-            <a href="https://github.com/lukketsvane/prinsessa-og-epstein" target="_blank" rel="noreferrer">
-              <Github size={18} />
-            </a>
-          </Button>
-          <Button variant="ghost" size="icon" className="h-8 w-8 text-zinc-500 hover:text-white" onClick={clear} title="Tøm søk">
-            <Trash2 size={18} />
-          </Button>
+      <header className="flex items-center justify-between px-4 py-3 border-b border-white/10">
+        <span className="text-sm font-medium tracking-tight">prinsessa og epstein</span>
+
+        {/* Mode Toggle */}
+        <div className="flex bg-zinc-900 rounded-lg p-0.5 border border-zinc-800">
+          <button
+            onClick={() => setMode('search')}
+            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
+              mode === 'search' ? 'bg-white text-black' : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            SOK
+          </button>
+          <button
+            onClick={() => setMode('chat')}
+            className={`px-4 py-1.5 text-xs font-medium rounded-md transition-all ${
+              mode === 'chat' ? 'bg-white text-black' : 'text-zinc-400 hover:text-white'
+            }`}
+          >
+            CHAT
+          </button>
+        </div>
+
+        <div className="flex items-center gap-1">
+          <a
+            href="https://tingogtang.notion.site/Prinsessa-og-Epstein-2f91c6815f7880918c15f02cc8882b28?source=copy_link"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 rounded-full hover:bg-white/10 active:bg-white/20 transition-colors"
+            aria-label="Info"
+          >
+            <Info size={18} strokeWidth={1.5} />
+          </a>
+          <a
+            href="https://github.com/lukketsvane/prinsessa-og-epstein"
+            target="_blank"
+            rel="noopener noreferrer"
+            className="p-2 rounded-full hover:bg-white/10 active:bg-white/20 transition-colors"
+            aria-label="GitHub"
+          >
+            <Github size={18} strokeWidth={1.5} />
+          </a>
+          <button
+            onClick={() => { setTempApiKey(apiKey); setShowKeyModal(true); }}
+            className={`p-2 rounded-full hover:bg-white/10 active:bg-white/20 transition-colors ${apiKey ? 'text-green-400' : ''}`}
+            aria-label="API Key"
+          >
+            <Key size={18} strokeWidth={1.5} />
+          </button>
+          <button
+            onClick={clearChat}
+            className="p-2 rounded-full hover:bg-white/10 active:bg-white/20 transition-colors"
+            aria-label="Clear"
+          >
+            <Trash2 size={18} strokeWidth={1.5} />
+          </button>
         </div>
       </header>
 
-      {/* Main Content Area */}
-      <main className="flex-1 overflow-hidden relative">
-        <ScrollArea className="h-full w-full">
-          <div className="w-full max-w-4xl mx-auto px-6 pb-32">
-            {!hasSearched ? (
-              <div className="pt-12 space-y-16 animate-in fade-in duration-1000">
-                {/* Banner Integration */}
+      {/* API Key Modal */}
+      {showKeyModal && (
+        <div className="fixed inset-0 bg-black/80 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl p-6 w-full max-w-md border border-zinc-800">
+            <h2 className="text-lg font-semibold mb-4">Gemini API-nokkel</h2>
+            <p className="text-sm text-zinc-400 mb-4">
+              Legg inn din eigen Google Gemini API-nokkel for a bruke chatboten.
+              Du kan fa ein gratis nokkel fra{' '}
+              <a href="https://aistudio.google.com/app/apikey" target="_blank" rel="noopener noreferrer" className="text-zinc-300 hover:text-white underline">
+                Google AI Studio
+              </a>.
+            </p>
+            <input
+              type="password"
+              value={tempApiKey}
+              onChange={(e) => setTempApiKey(e.target.value)}
+              placeholder="AIza..."
+              className="w-full px-4 py-3 bg-zinc-800 border border-zinc-700 rounded-lg focus:outline-none focus:ring-1 focus:ring-white text-white placeholder-zinc-500 mb-4"
+            />
+            <div className="flex gap-3">
+              <button onClick={() => setShowKeyModal(false)} className="flex-1 px-4 py-2 bg-zinc-800 hover:bg-zinc-700 rounded-lg transition-colors">
+                Avbryt
+              </button>
+              <button onClick={saveApiKey} className="flex-1 px-4 py-2 bg-white text-black hover:bg-gray-200 rounded-lg transition-colors font-medium">
+                Lagre
+              </button>
+            </div>
+          </div>
+        </div>
+      )}
 
-                {/* Highlights Section */}
-                <section className="space-y-8">
-
-                  
-                  <div className="grid grid-cols-1 md:grid-cols-2 gap-6">
-                    {highlights.map((h, i) => (
-                      <div 
-                        key={i} 
-                        className="bg-zinc-900/40 border border-zinc-800/50 rounded-2xl p-6 hover:border-zinc-700 transition-all group cursor-pointer" 
-                        onClick={() => handleSearch(undefined, h.content.substring(0, 40))}
-                      >
-                        <div className="flex justify-between items-start mb-4">
-                          <Badge variant="outline" className="text-[9px] border-zinc-800 text-zinc-500 uppercase px-2 py-0">{h.title}</Badge>
-                          <span className="text-[10px] font-mono text-zinc-600">{h.date}</span>
-                        </div>
-                        
-                        <div className="text-[10px] uppercase text-zinc-500 font-bold tracking-tighter mb-2">
-                          Fra: {h.from}
-                        </div>
-
-                        <div className="space-y-4 mb-4">
-                          <p className="text-base font-serif italic text-zinc-300 leading-relaxed">
-                            "{h.content}"
-                          </p>
-                          {h.response && (
-                            <div className="space-y-1 border-l border-zinc-800 pl-4 py-1">
-                              <div className="text-[9px] uppercase text-zinc-600 font-bold">{h.responseFrom}:</div>
-                              <p className="text-xs text-zinc-400 font-serif italic">
-                                "{h.response}"
-                              </p>
-                            </div>
-                          )}
-                        </div>
-
-                        <div className="flex justify-between items-center mt-auto">
-                          <span className="text-[9px] text-zinc-700 font-mono">
-                            {h.file}
-                          </span>
-                          <span className="text-[9px] text-zinc-500 uppercase font-bold opacity-0 group-hover:opacity-100 transition-opacity">Full melding →</span>
-                        </div>
-                      </div>
-                    ))}
-                  </div>
-                </section>
-
-                <div className="flex flex-col items-center justify-center py-12 text-center space-y-4 opacity-50">
-                  <div className="p-4 rounded-full bg-zinc-900/50 border border-zinc-800">
-                    <Search size={32} className="text-zinc-500" strokeWidth={1.5} />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-lg font-medium text-zinc-200 uppercase tracking-widest">Fullstendig arkiv</h3>
-                    <p className="text-zinc-500 max-w-xs mx-auto text-xs leading-relaxed">
-                      Bruk søkefeltet nedenfor for å finne spesifikke dokumenter blant 529 meldinger.
-                    </p>
-                  </div>
-                </div>
+      {/* Message Detail Modal */}
+      {selectedRecord && (
+        <div className="fixed inset-0 bg-black/90 flex items-center justify-center z-50 p-4">
+          <div className="bg-zinc-900 rounded-2xl w-full max-w-2xl border border-zinc-800 max-h-[90vh] flex flex-col">
+            <div className="flex items-center justify-between p-4 border-b border-zinc-800">
+              <div className="flex items-center gap-3">
+                <button
+                  onClick={() => navigateRecord('prev')}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="Previous"
+                >
+                  <ChevronLeft size={18} />
+                </button>
+                <button
+                  onClick={() => navigateRecord('next')}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="Next"
+                >
+                  <ChevronRight size={18} />
+                </button>
               </div>
-            ) : (
-              <div className="pt-12 space-y-8 animate-in fade-in slide-in-from-bottom-4 duration-500">
-                <div className="flex items-center justify-between border-b border-zinc-900 pb-4">
-                  <h2 className="text-xs uppercase tracking-widest text-zinc-500 font-bold">
-                    Resultater: <span className="text-zinc-200 ml-1">{results.length} funnet</span>
-                  </h2>
-                  <Button variant="ghost" size="sm" onClick={clear} className="text-xs text-zinc-500 h-8">Nullstill</Button>
+              <div className="flex items-center gap-2">
+                <a
+                  href={getMessageUrl(selectedRecord)}
+                  target="_blank"
+                  rel="noopener noreferrer"
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="Open in Notion"
+                >
+                  <ExternalLink size={18} />
+                </a>
+                <button
+                  onClick={() => setSelectedRecord(null)}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="Close"
+                >
+                  <X size={18} />
+                </button>
+              </div>
+            </div>
+
+            <div className="p-6 overflow-y-auto flex-1">
+              {selectedRecord.tag && (
+                <span className="inline-block px-2 py-0.5 text-[10px] font-medium bg-white/10 border border-white/20 rounded uppercase tracking-wider mb-4">
+                  {selectedRecord.tag}
+                </span>
+              )}
+
+              <div className="space-y-3 mb-6">
+                <div className="flex justify-between text-xs text-zinc-500">
+                  <span>FRA: {formatSender(selectedRecord.From)}</span>
+                  <span>{formatDate(selectedRecord.Sent)}</span>
                 </div>
-
-                <div className="grid gap-6">
-                  {results.map((msg: any, i) => (
-                    <div key={i} className="group">
-                      <div className="bg-zinc-900/30 border border-zinc-800/50 hover:border-zinc-700/50 transition-all rounded-2xl p-6 space-y-4 shadow-sm">
-                        <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
-                          <div className="flex flex-wrap items-center gap-2">
-                            <Badge variant="outline" className="text-[10px] border-zinc-800 bg-zinc-950 text-zinc-400 font-medium">
-                              FRA: {msg.From?.replace(/<[^>]*>/g, '').trim()}
-                            </Badge>
-                            <span className="text-zinc-700 text-xs">→</span>
-                            <Badge variant="outline" className="text-[10px] border-zinc-800 bg-zinc-950 text-zinc-400 font-medium">
-                              TIL: {msg.To?.replace(/<[^>]*>/g, '').trim()}
-                            </Badge>
-                          </div>
-                          <time className="text-[10px] font-mono text-zinc-600">{msg.Sent}</time>
-                        </div>
-                        
-                        <div className="text-lg leading-relaxed font-serif italic text-zinc-300 px-2 border-l-2 border-zinc-800 group-hover:border-zinc-600 transition-colors">
-                          "{msg.displayContent}"
-                        </div>
-
-                        <div className="flex items-center justify-between pt-4 border-t border-zinc-800/30">
-                          <span className="text-[9px] font-mono text-zinc-700 tracking-wider uppercase">{msg.FileName}</span>
-                          <Button variant="ghost" size="sm" className="h-auto p-0 text-zinc-500 hover:text-zinc-200 text-[10px] font-bold uppercase tracking-tighter" asChild>
-                            <a href={NOTION_URL} target="_blank" rel="noreferrer">
-                              <ExternalLink size={12} className="mr-1.5" />
-                              Kilde
-                            </a>
-                          </Button>
-                        </div>
-                      </div>
-                    </div>
-                  ))}
+                <div className="text-xs text-zinc-500">
+                  TIL: {formatSender(selectedRecord.To)}
                 </div>
-
-                {results.length === 0 && (
-                  <div className="text-center py-20 bg-zinc-900/20 rounded-3xl border border-dashed border-zinc-800">
-                    <p className="text-zinc-600 font-serif italic">
-                      Ingen treff for "{query}"
-                    </p>
+                {selectedRecord.Subject && (
+                  <div className="text-xs text-zinc-500">
+                    EMNE: {selectedRecord.Subject}
                   </div>
                 )}
               </div>
-            )}
-            <div ref={messagesEndRef} />
-          </div>
-        </ScrollArea>
 
-        {/* Floating Notion Button */}
-        <div className="absolute bottom-8 left-8 z-20">
-          <Button 
-            variant="outline" 
-            size="icon" 
-            className="rounded-full h-12 w-12 bg-zinc-950 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 shadow-2xl transition-all active:scale-90 group"
-            asChild
-          >
-            <a href={NOTION_URL} target="_blank" rel="noreferrer">
-              <span className="font-bold text-lg group-hover:scale-110 transition-transform">N</span>
-            </a>
-          </Button>
+              <div className="text-sm text-zinc-200 leading-relaxed whitespace-pre-wrap">
+                {selectedRecord.Content}
+              </div>
+
+              <div className="mt-6 pt-4 border-t border-zinc-800 flex items-center gap-2 text-xs text-zinc-600">
+                <FileText size={12} />
+                <span className="font-mono">{selectedRecord.FileName}</span>
+              </div>
+            </div>
+          </div>
         </div>
-      </main>
+      )}
 
-      {/* Input Section */}
-      <footer className="px-6 py-10 bg-gradient-to-t from-black via-black to-transparent border-t border-zinc-900/50">
-        <form 
-          onSubmit={handleSearch}
-          className="max-w-2xl mx-auto relative"
-        >
-          <div className="relative flex items-center bg-zinc-900 border border-zinc-800 rounded-2xl px-5 py-3 shadow-2xl focus-within:border-zinc-600 transition-all">
-            <Input 
-              placeholder="Søk i korrespondansen..." 
-              value={query}
-              onChange={(e) => setQuery(e.target.value)}
-              className="flex-1 bg-transparent border-none focus-visible:ring-0 text-base placeholder:text-zinc-600 h-10"
-            />
-            <Button 
-              type="submit" 
-              size="icon" 
-              variant="secondary" 
-              className="rounded-xl h-10 w-10 bg-zinc-100 text-black hover:bg-white"
-              disabled={!query.trim()}
-            >
-              <Send size={20} />
-            </Button>
+      {/* Main Content */}
+      {mode === 'search' ? (
+        <>
+          {/* Search Input */}
+          <div className="p-4 border-b border-zinc-800">
+            <div className="max-w-4xl mx-auto relative">
+              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+              <input
+                type="text"
+                value={searchQuery}
+                onChange={(e) => setSearchQuery(e.target.value)}
+                placeholder="Sok i meldingane..."
+                className="w-full pl-12 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-full focus:outline-none focus:ring-1 focus:ring-white text-white placeholder-zinc-500"
+              />
+            </div>
           </div>
-        </form>
-      </footer>
+
+          {/* Search Results */}
+          <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
+            <div className="max-w-4xl mx-auto space-y-4">
+              {/* Highlighted messages */}
+              {highlightedRecords.map((record, idx) => (
+                <div
+                  key={`highlight-${record.FileName}-${idx}`}
+                  className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-4 mb-2">
+                    {record.tag && (
+                      <span className="px-2 py-0.5 text-[10px] font-medium bg-white/10 border border-white/20 rounded uppercase tracking-wider">
+                        {record.tag}
+                      </span>
+                    )}
+                    <span className="text-xs text-zinc-500 ml-auto">{formatDate(record.Sent)}</span>
+                  </div>
+
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">
+                    FRA: {formatSender(record.From)}
+                  </div>
+
+                  <p className="text-sm text-zinc-200 italic leading-relaxed mb-3 line-clamp-3">
+                    "{record.Content.slice(0, 200)}{record.Content.length > 200 ? '...' : ''}"
+                  </p>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs text-zinc-600">
+                      <FileText size={12} />
+                      <span className="font-mono">{record.FileName}</span>
+                    </div>
+                    <button
+                      onClick={() => setSelectedRecord(record)}
+                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white transition-colors"
+                    >
+                      FULL MELDING <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {/* Divider */}
+              {highlightedRecords.length > 0 && otherRecords.length > 0 && (
+                <div className="flex items-center gap-4 py-4">
+                  <div className="flex-1 h-px bg-zinc-800"></div>
+                  <span className="text-xs text-zinc-600 uppercase tracking-wider">Alle meldingar</span>
+                  <div className="flex-1 h-px bg-zinc-800"></div>
+                </div>
+              )}
+
+              {/* Other messages */}
+              {otherRecords.map((record, idx) => (
+                <div
+                  key={`other-${record.FileName}-${idx}`}
+                  className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors"
+                >
+                  <div className="flex items-start justify-between gap-4 mb-2">
+                    <span className="text-xs text-zinc-500">{formatDate(record.Sent)}</span>
+                  </div>
+
+                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">
+                    FRA: {formatSender(record.From)}
+                  </div>
+
+                  <p className="text-sm text-zinc-200 italic leading-relaxed mb-3 line-clamp-3">
+                    "{record.Content.slice(0, 200)}{record.Content.length > 200 ? '...' : ''}"
+                  </p>
+
+                  <div className="flex items-center justify-between">
+                    <div className="flex items-center gap-1.5 text-xs text-zinc-600">
+                      <FileText size={12} />
+                      <span className="font-mono">{record.FileName}</span>
+                    </div>
+                    <button
+                      onClick={() => setSelectedRecord(record)}
+                      className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white transition-colors"
+                    >
+                      FULL MELDING <ChevronRight size={14} />
+                    </button>
+                  </div>
+                </div>
+              ))}
+
+              {highlightedRecords.length === 0 && otherRecords.length === 0 && (
+                <div className="text-center py-12 text-zinc-500">
+                  Ingen meldingar funne for "{searchQuery}"
+                </div>
+              )}
+            </div>
+          </div>
+        </>
+      ) : (
+        <>
+          {/* Chat Area */}
+          <div className="flex-1 overflow-y-auto p-4 sm:p-6 scrollbar-hide">
+            <div className="max-w-4xl mx-auto space-y-6">
+              {messages.map((msg) => (
+                <div key={msg.id} className={`flex w-full ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
+                  <div className={`flex max-w-[90%] sm:max-w-[80%] ${msg.role === 'user' ? 'flex-row-reverse space-x-reverse' : 'flex-row'} space-x-3`}>
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full flex items-center justify-center mt-1 border bg-zinc-900 border-zinc-800 text-zinc-400">
+                      {msg.role === 'user' ? <UserIcon /> : <BotIcon />}
+                    </div>
+                    <div className={`relative px-5 py-3 text-sm shadow-sm rounded-2xl bg-zinc-900 text-zinc-200 border border-zinc-800 ${
+                      msg.role === 'user' ? 'rounded-tr-none' : 'rounded-tl-none'
+                    }`}>
+                      <div className="whitespace-pre-wrap leading-relaxed">{formatText(msg.text)}</div>
+                      <div className="text-[10px] mt-2 opacity-50 text-zinc-500">
+                        {msg.timestamp.toLocaleTimeString([], { hour: '2-digit', minute: '2-digit' })}
+                      </div>
+                    </div>
+                  </div>
+                </div>
+              ))}
+
+              {loadingState === LoadingState.LOADING && (
+                <div className="flex w-full justify-start">
+                  <div className="flex flex-row space-x-3">
+                    <div className="flex-shrink-0 w-8 h-8 rounded-full bg-zinc-900 border border-zinc-700 text-zinc-300 flex items-center justify-center mt-1">
+                      <BotIcon />
+                    </div>
+                    <div className="bg-zinc-900 border border-zinc-800 px-5 py-3 rounded-2xl rounded-tl-none flex items-center space-x-2">
+                      <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '0ms' }}></div>
+                      <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '150ms' }}></div>
+                      <div className="w-1.5 h-1.5 bg-gray-500 rounded-full animate-bounce" style={{ animationDelay: '300ms' }}></div>
+                    </div>
+                  </div>
+                </div>
+              )}
+
+              {/* Example Prompts */}
+              {messages.length === 1 && (
+                <div className="pt-4">
+                  <p className="text-xs text-zinc-500 mb-3">Forslag til sporsmal:</p>
+                  <div className="flex flex-wrap gap-2">
+                    {EXAMPLE_PROMPTS.map((prompt, i) => (
+                      <button
+                        key={i}
+                        onClick={() => handleSendMessage(prompt)}
+                        className="px-3 py-2 text-xs bg-zinc-900 border border-zinc-800 rounded-lg hover:border-zinc-600 hover:bg-zinc-800 transition-colors text-zinc-300"
+                      >
+                        {prompt}
+                      </button>
+                    ))}
+                  </div>
+                </div>
+              )}
+
+              <div ref={scrollRef} />
+            </div>
+          </div>
+
+          {/* Input Area */}
+          <div className="flex-none p-4 border-t border-zinc-800">
+            <div className="max-w-4xl mx-auto">
+              <form onSubmit={handleFormSubmit} className="relative flex items-center">
+                <input
+                  type="text"
+                  value={inputValue}
+                  onChange={(e) => setInputValue(e.target.value)}
+                  placeholder="Spor om e-postane..."
+                  className="w-full pl-5 pr-14 py-3.5 bg-zinc-900 border border-zinc-800 rounded-full focus:outline-none focus:ring-1 focus:ring-white text-white placeholder-zinc-500"
+                  disabled={loadingState === LoadingState.LOADING}
+                />
+                <button
+                  type="submit"
+                  disabled={!inputValue.trim() || loadingState === LoadingState.LOADING}
+                  className="absolute right-2 p-2.5 bg-white text-black rounded-full hover:bg-gray-200 disabled:opacity-30 disabled:cursor-not-allowed transition-colors"
+                >
+                  <Send size={18} />
+                </button>
+              </form>
+            </div>
+          </div>
+        </>
+      )}
     </div>
-  )
+  );
 }
