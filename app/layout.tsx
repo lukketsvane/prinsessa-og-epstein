@@ -17,10 +17,15 @@ const geistMono = Geist_Mono({
 export const metadata: Metadata = {
   title: 'Prinsessa og Epstein',
   description: 'Meldingsarkiv og korrespondanse',
-  viewport: {
-    width: 'device-width',
-    initialScale: 1,
-    viewportFit: 'cover',
+  icons: {
+    icon: '/favicon.png',
+    shortcut: '/favicon.png',
+    apple: '/apple-icon.png',
+  },
+  appleWebApp: {
+    capable: true,
+    statusBarStyle: 'default',
+    title: 'Prinsessa og Epstein',
   },
 }
 
