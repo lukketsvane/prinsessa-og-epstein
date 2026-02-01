@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { GoogleGenAI } from "@google/genai";
 import { KNOWLEDGE_BASE_CSV } from './constants';
 import { Message, LoadingState } from './types';
-import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink, Filter, Calendar, MessageSquare, Inbox, Star, Menu, Minimize2, Maximize2 } from 'lucide-react';
+import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink, Filter, Calendar, MessageSquare, Inbox, Star, Menu, Minimize2, Maximize2, Circle } from 'lucide-react';
 
 const ARCHIVE_BASE = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb";
 
@@ -222,9 +222,52 @@ export default function App() {
   const [semanticResults, setSemanticResults] = useState<EmailRecord[]>([]);
   const [isSearching, setIsSearching] = useState(false);
   const [searchMode, setSearchMode] = useState<'basic' | 'semantic'>('semantic');
+  const [readMessages, setReadMessages] = useState<Set<string>>(new Set());
+  const [starredMessages, setStarredMessages] = useState<Set<string>>(new Set());
 
   const chatRef = useRef<any>(null);
   const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Load read/starred state from localStorage
+  useEffect(() => {
+    try {
+      const storedRead = localStorage.getItem('pe-read-messages');
+      const storedStarred = localStorage.getItem('pe-starred-messages');
+      if (storedRead) setReadMessages(new Set(JSON.parse(storedRead)));
+      if (storedStarred) setStarredMessages(new Set(JSON.parse(storedStarred)));
+    } catch (e) {
+      console.error('Failed to load message state from localStorage', e);
+    }
+  }, []);
+
+  // Save read state to localStorage
+  useEffect(() => {
+    if (readMessages.size > 0) {
+      localStorage.setItem('pe-read-messages', JSON.stringify([...readMessages]));
+    }
+  }, [readMessages]);
+
+  // Save starred state to localStorage
+  useEffect(() => {
+    localStorage.setItem('pe-starred-messages', JSON.stringify([...starredMessages]));
+  }, [starredMessages]);
+
+  const toggleStarred = (fileName: string, e: React.MouseEvent) => {
+    e.stopPropagation();
+    setStarredMessages(prev => {
+      const next = new Set(prev);
+      if (next.has(fileName)) {
+        next.delete(fileName);
+      } else {
+        next.add(fileName);
+      }
+      return next;
+    });
+  };
+
+  const markAsRead = (fileName: string) => {
+    setReadMessages(prev => new Set([...prev, fileName]));
+  };
 
   // Semantic search with debounce
   useEffect(() => {
@@ -300,10 +343,18 @@ export default function App() {
   const { highlightedRecords, otherRecords } = useMemo(() => {
     // Use semantic results if available and in semantic mode
     if (searchQuery.trim() && searchMode === 'semantic' && semanticResults.length > 0) {
-      return { highlightedRecords: [], otherRecords: semanticResults };
+      const results = sidebarSection === 'highlights'
+        ? semanticResults.filter(r => starredMessages.has(r.FileName))
+        : semanticResults;
+      return { highlightedRecords: [], otherRecords: results };
     }
 
     let filtered = [...records];
+
+    // Filter by starred if viewing starred section
+    if (sidebarSection === 'highlights') {
+      filtered = filtered.filter(r => starredMessages.has(r.FileName));
+    }
 
     // Apply sender filter
     if (filterSender !== 'all') {
@@ -334,11 +385,9 @@ export default function App() {
       return { highlightedRecords: [], otherRecords: scored };
     }
 
-    // No search: show highlights first
-    const highlighted = HIGHLIGHTS.map(h => filtered.find(r => r.FileName === h.fileName)).filter(Boolean) as EmailRecord[];
-    const others = filtered.filter(r => !r.tag);
-    return { highlightedRecords: highlighted, otherRecords: others };
-  }, [records, searchQuery, filterSender, dateRange, searchMode, semanticResults]);
+    // Return all filtered records
+    return { highlightedRecords: [], otherRecords: filtered };
+  }, [records, searchQuery, filterSender, dateRange, searchMode, semanticResults, sidebarSection, starredMessages]);
 
   const getSystemInstruction = useCallback(() => {
     return `Du er ein objektiv dataanalytiker som har tilgang til eit spesifikt arkiv av e-postar mellom Kronprinsessen og Jeffrey Epstein (og relaterte partar).
@@ -433,6 +482,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
 
   const handleRecordClick = (record: EmailRecord) => {
     setSelectedRecord(record);
+    markAsRead(record.FileName);
     const thread = getConversationThread(records, record);
     setThreadContext(thread);
   };
@@ -719,9 +769,9 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                 sidebarSection === 'highlights' ? 'bg-zinc-900 text-white' : 'text-zinc-400 hover:bg-zinc-900/50 hover:text-white'
               }`}
             >
-              <Star size={18} />
-              <span className="text-sm font-medium">Høgdepunkt</span>
-              <span className="ml-auto text-xs text-zinc-600">{HIGHLIGHTS.length}</span>
+              <Star size={18} className={sidebarSection === 'highlights' ? 'text-yellow-500' : ''} />
+              <span className="text-sm font-medium">Viktige</span>
+              <span className="ml-auto text-xs text-zinc-600">{starredMessages.size}</span>
             </button>
           </div>
 
@@ -825,15 +875,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
               {/* Timeline View */}
               {viewMode === 'timeline' ? (
                 <div className="space-y-8">
-                  {[...highlightedRecords, ...otherRecords]
-                    .sort((a, b) => new Date(a.Sent).getTime() - new Date(b.Sent).getTime())
-                    .reduce((acc, record) => {
-                      const year = new Date(record.Sent).getFullYear();
-                      if (!acc[year]) acc[year] = [];
-                      acc[year].push(record);
-                      return acc;
-                    }, {} as Record<number, EmailRecord[]>)
-                    && Object.entries(
+                  {(Object.entries(
                       [...highlightedRecords, ...otherRecords]
                         .sort((a, b) => new Date(a.Sent).getTime() - new Date(b.Sent).getTime())
                         .reduce((acc, record) => {
@@ -842,7 +884,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                           acc[year].push(record);
                           return acc;
                         }, {} as Record<number, EmailRecord[]>)
-                    ).map(([year, yearRecords]) => (
+                    ) as [string, EmailRecord[]][]).map(([year, yearRecords]) => (
                       <div key={year}>
                         <div className="flex items-center gap-4 mb-4">
                           <div className="text-2xl font-semibold text-white">{year}</div>
@@ -851,32 +893,42 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                         </div>
                         <div className="relative pl-8 space-y-4">
                           <div className="absolute left-0 top-0 bottom-0 w-px bg-zinc-800"></div>
-                          {yearRecords.map((record, idx) => (
-                            <div key={`timeline-${record.FileName}-${idx}`} className="relative">
-                              <div className="absolute left-[-33px] top-3 w-2 h-2 rounded-full bg-white"></div>
-                              <div
-                                onClick={() => handleRecordClick(record)}
-                                className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer"
-                              >
-                                <div className="flex items-start justify-between gap-4 mb-2">
-                                  <div className="flex items-center gap-2">
-                                    <span className="text-xs text-zinc-500">{formatDate(record.Sent)}</span>
-                                    {record.tag && (
-                                      <span className="px-2 py-0.5 text-[10px] font-medium bg-white/10 border border-white/20 rounded uppercase tracking-wider">
-                                        {record.tag}
-                                      </span>
-                                    )}
+                          {yearRecords.map((record, idx) => {
+                            const isRead = readMessages.has(record.FileName);
+                            const isStarred = starredMessages.has(record.FileName);
+                            return (
+                              <div key={`timeline-${record.FileName}-${idx}`} className="relative">
+                                <div className={`absolute left-[-33px] top-3 w-2 h-2 rounded-full ${isRead ? 'bg-zinc-600' : 'bg-blue-400'}`}></div>
+                                <div
+                                  onClick={() => handleRecordClick(record)}
+                                  className={`border rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer ${
+                                    isRead ? 'bg-zinc-900/30 border-zinc-800/50' : 'bg-zinc-900/50 border-zinc-800'
+                                  }`}
+                                >
+                                  <div className="flex items-start justify-between gap-4 mb-2">
+                                    <div className="flex items-center gap-2">
+                                      {!isRead && <Circle size={8} className="text-blue-400 fill-blue-400" />}
+                                      <span className={`text-xs ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>{formatDate(record.Sent)}</span>
+                                    </div>
+                                    <button
+                                      onClick={(e) => toggleStarred(record.FileName, e)}
+                                      className={`p-1 rounded hover:bg-zinc-800 transition-colors ${
+                                        isStarred ? 'text-yellow-400' : 'text-zinc-600 hover:text-zinc-400'
+                                      }`}
+                                    >
+                                      <Star size={14} className={isStarred ? 'fill-yellow-400' : ''} />
+                                    </button>
                                   </div>
+                                  <div className={`text-[10px] uppercase tracking-wider mb-1 ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                                    {formatSender(record.From)} → {formatSender(record.To)}
+                                  </div>
+                                  <p className={`text-sm leading-relaxed line-clamp-2 ${isRead ? 'text-zinc-400' : 'text-zinc-200'}`}>
+                                    "{record.Content.slice(0, 150)}{record.Content.length > 150 ? '...' : ''}"
+                                  </p>
                                 </div>
-                                <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">
-                                  {formatSender(record.From)} → {formatSender(record.To)}
-                                </div>
-                                <p className="text-sm text-zinc-200 leading-relaxed line-clamp-2">
-                                  "{record.Content.slice(0, 150)}{record.Content.length > 150 ? '...' : ''}"
-                                </p>
                               </div>
-                            </div>
-                          ))}
+                            );
+                          })}
                         </div>
                       </div>
                     ))}
@@ -885,39 +937,65 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                 /* List View */
                 <div className="space-y-4">
               {/* All messages */}
-              {[...highlightedRecords, ...otherRecords].map((record, idx) => (
-                <div
-                  key={`msg-${record.FileName}-${idx}`}
-                  onClick={() => handleRecordClick(record)}
-                  className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer"
-                >
-                  <div className="flex items-start justify-between gap-4 mb-2">
-                    <span className="text-xs text-zinc-500">{formatDate(record.Sent)}</span>
-                  </div>
-
-                  <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">
-                    FRA: {formatSender(record.From)}
-                  </div>
-
-                  <p className="text-sm text-zinc-200 italic leading-relaxed mb-3 line-clamp-3">
-                    "{record.Content.slice(0, 200)}{record.Content.length > 200 ? '...' : ''}"
-                  </p>
-
-                  <div className="flex items-center justify-between">
-                    <div className="flex items-center gap-1.5 text-xs text-zinc-600">
-                      <FileText size={12} />
-                      <span className="font-mono">{record.FileName}</span>
+              {[...highlightedRecords, ...otherRecords].map((record, idx) => {
+                const isRead = readMessages.has(record.FileName);
+                const isStarred = starredMessages.has(record.FileName);
+                return (
+                  <div
+                    key={`msg-${record.FileName}-${idx}`}
+                    onClick={() => handleRecordClick(record)}
+                    className={`border rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer ${
+                      isRead ? 'bg-zinc-900/30 border-zinc-800/50' : 'bg-zinc-900/50 border-zinc-800'
+                    }`}
+                  >
+                    <div className="flex items-start justify-between gap-4 mb-2">
+                      <div className="flex items-center gap-2">
+                        {!isRead && (
+                          <Circle size={8} className="text-blue-400 fill-blue-400" />
+                        )}
+                        <span className={`text-xs ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                          {formatDate(record.Sent)}
+                        </span>
+                      </div>
+                      <button
+                        onClick={(e) => toggleStarred(record.FileName, e)}
+                        className={`p-1 rounded hover:bg-zinc-800 transition-colors ${
+                          isStarred ? 'text-yellow-400' : 'text-zinc-600 hover:text-zinc-400'
+                        }`}
+                      >
+                        <Star size={14} className={isStarred ? 'fill-yellow-400' : ''} />
+                      </button>
                     </div>
-                    <span className="flex items-center gap-1 text-xs text-zinc-400">
-                      VIS TRÅD <ChevronRight size={14} />
-                    </span>
+
+                    <div className={`text-[10px] uppercase tracking-wider mb-1 ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                      FRA: {formatSender(record.From)}
+                    </div>
+
+                    <p className={`text-sm italic leading-relaxed mb-3 line-clamp-3 ${isRead ? 'text-zinc-400' : 'text-zinc-200'}`}>
+                      "{record.Content.slice(0, 200)}{record.Content.length > 200 ? '...' : ''}"
+                    </p>
+
+                    <div className="flex items-center justify-between">
+                      <div className="flex items-center gap-1.5 text-xs text-zinc-600">
+                        <FileText size={12} />
+                        <span className="font-mono">{record.FileName}</span>
+                      </div>
+                      <span className="flex items-center gap-1 text-xs text-zinc-400">
+                        VIS TRÅD <ChevronRight size={14} />
+                      </span>
+                    </div>
                   </div>
-                </div>
-              ))}
+                );
+              })}
 
               {highlightedRecords.length === 0 && otherRecords.length === 0 && (
                 <div className="text-center py-12 text-zinc-500">
-                  Ingen meldingar funne for "{searchQuery}"
+                  {sidebarSection === 'highlights'
+                    ? 'Ingen viktige meldingar. Klikk på stjerneikonet for å markere meldingar som viktige.'
+                    : searchQuery
+                      ? `Ingen meldingar funne for "${searchQuery}"`
+                      : 'Ingen meldingar funne.'
+                  }
                 </div>
               )}
                 </div>
