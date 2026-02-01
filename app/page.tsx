@@ -30,11 +30,11 @@ const HIGHLIGHTS: { fileName: string; tag: string; notionPageId: string }[] = [
 ];
 
 const EXAMPLE_PROMPTS = [
-  "Når googla Mette-Marit Epstein?",
-  "Kva skreiv Epstein om Woody Allen?",
-  "Kva skreiv kronprinsessa om tapet til Marius?",
-  "Kva sa kronprinsessa om Paris?",
-  "Finst det meldingar om Pale Fire?",
+  "Vart kronprinsessa invitert til øya hans?",
+  "Kva bøker tilrådde Epstein?",
+  "Kven er Boris Nikolic?",
+  "Kor ofte møttest dei i New York?",
+  "Kva skreiv ho om helsa si?",
 ];
 
 const UserIcon = () => (
