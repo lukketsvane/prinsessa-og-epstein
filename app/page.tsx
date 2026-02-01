@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { GoogleGenAI } from "@google/genai";
 import { KNOWLEDGE_BASE_CSV } from './constants';
 import { Message, LoadingState } from './types';
-import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink } from 'lucide-react';
+import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink, Filter, Calendar, MessageSquare } from 'lucide-react';
 
 const ARCHIVE_BASE = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb";
 
@@ -145,6 +145,48 @@ function formatSender(from: string): string {
   return from.toUpperCase().slice(0, 30);
 }
 
+function scoreRecord(record: EmailRecord, query: string): number {
+  if (!query) return 0;
+  const q = query.toLowerCase();
+  const tokens = q.split(/\s+/).filter(t => t.length > 2);
+  let score = 0;
+
+  tokens.forEach(token => {
+    const content = record.Content.toLowerCase();
+    const subject = record.Subject.toLowerCase();
+    const from = record.From.toLowerCase();
+
+    // Exact phrase match in content (highest weight)
+    if (content.includes(q)) score += 10;
+
+    // Token matches with different weights
+    if (subject.includes(token)) score += 5;
+    if (from.includes(token)) score += 3;
+    if (content.includes(token)) score += 2;
+
+    // Bonus for tag match
+    if (record.tag && record.tag.toLowerCase().includes(token)) score += 8;
+  });
+
+  return score;
+}
+
+function getConversationThread(records: EmailRecord[], targetRecord: EmailRecord): EmailRecord[] {
+  const targetDate = new Date(targetRecord.Sent);
+  const dayBefore = new Date(targetDate);
+  const dayAfter = new Date(targetDate);
+  dayBefore.setDate(targetDate.getDate() - 1);
+  dayAfter.setDate(targetDate.getDate() + 1);
+
+  // Get messages within 1 day before/after, sorted by date
+  return records
+    .filter(r => {
+      const date = new Date(r.Sent);
+      return date >= dayBefore && date <= dayAfter;
+    })
+    .sort((a, b) => new Date(a.Sent).getTime() - new Date(b.Sent).getTime());
+}
+
 export default function App() {
   const [mode, setMode] = useState<'search' | 'chat'>('search');
   const [messages, setMessages] = useState<Message[]>([]);
@@ -155,6 +197,11 @@ export default function App() {
   const [tempApiKey, setTempApiKey] = useState('');
   const [searchQuery, setSearchQuery] = useState('');
   const [selectedRecord, setSelectedRecord] = useState<EmailRecord | null>(null);
+  const [filterSender, setFilterSender] = useState<string>('all');
+  const [dateRange, setDateRange] = useState<{ start: string; end: string }>({ start: '', end: '' });
+  const [showFilters, setShowFilters] = useState(false);
+  const [viewMode, setViewMode] = useState<'list' | 'timeline' | 'thread'>('list');
+  const [threadContext, setThreadContext] = useState<EmailRecord[]>([]);
 
   const chatRef = useRef<any>(null);
   const scrollRef = useRef<HTMLDivElement>(null);
@@ -162,22 +209,42 @@ export default function App() {
   const records = useMemo(() => parseCSV(KNOWLEDGE_BASE_CSV), []);
 
   const { highlightedRecords, otherRecords } = useMemo(() => {
-    if (!searchQuery.trim()) {
-      // Show highlights first when no search
-      const highlighted = HIGHLIGHTS.map(h => records.find(r => r.FileName === h.fileName)).filter(Boolean) as EmailRecord[];
-      const others = records.filter(r => !r.tag);
-      return { highlightedRecords: highlighted, otherRecords: others };
+    let filtered = [...records];
+
+    // Apply sender filter
+    if (filterSender !== 'all') {
+      filtered = filtered.filter(r => {
+        const from = formatSender(r.From);
+        return from === filterSender;
+      });
     }
-    const query = searchQuery.toLowerCase();
-    const filtered = records.filter(r =>
-      r.Content.toLowerCase().includes(query) ||
-      r.Subject.toLowerCase().includes(query) ||
-      r.From.toLowerCase().includes(query) ||
-      r.To.toLowerCase().includes(query) ||
-      (r.tag && r.tag.toLowerCase().includes(query))
-    ).slice(0, 50);
-    return { highlightedRecords: [], otherRecords: filtered };
-  }, [records, searchQuery]);
+
+    // Apply date range filter
+    if (dateRange.start || dateRange.end) {
+      filtered = filtered.filter(r => {
+        const date = new Date(r.Sent);
+        const start = dateRange.start ? new Date(dateRange.start) : new Date('2000-01-01');
+        const end = dateRange.end ? new Date(dateRange.end) : new Date('2030-12-31');
+        return date >= start && date <= end;
+      });
+    }
+
+    // Apply search query with semantic scoring
+    if (searchQuery.trim()) {
+      const scored = filtered
+        .map(r => ({ record: r, score: scoreRecord(r, searchQuery) }))
+        .filter(item => item.score > 0)
+        .sort((a, b) => b.score - a.score)
+        .slice(0, 50)
+        .map(item => item.record);
+      return { highlightedRecords: [], otherRecords: scored };
+    }
+
+    // No search: show highlights first
+    const highlighted = HIGHLIGHTS.map(h => filtered.find(r => r.FileName === h.fileName)).filter(Boolean) as EmailRecord[];
+    const others = filtered.filter(r => !r.tag);
+    return { highlightedRecords: highlighted, otherRecords: others };
+  }, [records, searchQuery, filterSender, dateRange]);
 
   const getSystemInstruction = useCallback(() => {
     return `Du er ein objektiv dataanalytiker som har tilgang til eit spesifikt arkiv av e-postar mellom Kronprinsessen og Jeffrey Epstein (og relaterte partar).
@@ -282,6 +349,12 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
     if (newIndex >= 0 && newIndex < sortedRecords.length) {
       setSelectedRecord(sortedRecords[newIndex]);
     }
+  };
+
+  const handleRecordClick = (record: EmailRecord) => {
+    setSelectedRecord(record);
+    const thread = getConversationThread(records, record);
+    setThreadContext(thread);
   };
 
   const saveApiKey = () => {
@@ -497,6 +570,42 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                 <FileText size={12} />
                 <span className="font-mono">{selectedRecord.FileName}</span>
               </div>
+
+              {/* Thread Context */}
+              {threadContext.length > 1 && (
+                <div className="mt-6 pt-4 border-t border-zinc-800">
+                  <div className="flex items-center gap-2 mb-3">
+                    <MessageSquare size={14} className="text-zinc-500" />
+                    <span className="text-xs text-zinc-500 uppercase tracking-wider">
+                      Korrespondanse ({threadContext.length} meldingar)
+                    </span>
+                  </div>
+                  <div className="space-y-2">
+                    {threadContext.map((msg, idx) => (
+                      <div
+                        key={`thread-${msg.FileName}-${idx}`}
+                        className={`p-3 rounded-lg border text-xs ${
+                          msg.FileName === selectedRecord.FileName
+                            ? 'bg-white/5 border-white/20'
+                            : 'bg-zinc-900/50 border-zinc-800 hover:border-zinc-700 cursor-pointer'
+                        }`}
+                        onClick={() => msg.FileName !== selectedRecord.FileName && handleRecordClick(msg)}
+                      >
+                        <div className="flex items-center justify-between mb-1">
+                          <span className="text-zinc-500">{formatDate(msg.Sent)}</span>
+                          <span className="text-zinc-600 font-mono text-[10px]">{msg.FileName}</span>
+                        </div>
+                        <div className="text-zinc-400 mb-1">
+                          {formatSender(msg.From)} → {formatSender(msg.To)}
+                        </div>
+                        <div className="text-zinc-300 line-clamp-2">
+                          "{msg.Content.slice(0, 100)}{msg.Content.length > 100 ? '...' : ''}"
+                        </div>
+                      </div>
+                    ))}
+                  </div>
+                </div>
+              )}
             </div>
           </div>
         </div>
@@ -505,23 +614,156 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
       {/* Main Content */}
       {mode === 'search' ? (
         <>
-          {/* Search Input */}
-          <div className="p-4 border-b border-zinc-800">
-            <div className="max-w-4xl mx-auto relative">
-              <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
-              <input
-                type="text"
-                value={searchQuery}
-                onChange={(e) => setSearchQuery(e.target.value)}
-                placeholder="Sok i meldingane..."
-                className="w-full pl-12 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-full focus:outline-none focus:ring-1 focus:ring-white text-white placeholder-zinc-500"
-              />
+          {/* Search Input & Filters */}
+          <div className="border-b border-zinc-800">
+            <div className="p-4">
+              <div className="max-w-4xl mx-auto">
+                <div className="relative flex gap-2">
+                  <div className="flex-1 relative">
+                    <Search className="absolute left-4 top-1/2 -translate-y-1/2 text-zinc-500" size={18} />
+                    <input
+                      type="text"
+                      value={searchQuery}
+                      onChange={(e) => setSearchQuery(e.target.value)}
+                      placeholder="Semantisk søk i meldingar..."
+                      className="w-full pl-12 pr-4 py-3 bg-zinc-900 border border-zinc-800 rounded-full focus:outline-none focus:ring-1 focus:ring-white text-white placeholder-zinc-500"
+                    />
+                  </div>
+                  <button
+                    onClick={() => setShowFilters(!showFilters)}
+                    className={`px-4 py-3 rounded-full border transition-colors ${showFilters ? 'bg-white text-black border-white' : 'bg-zinc-900 text-zinc-400 border-zinc-800 hover:border-zinc-600'}`}
+                  >
+                    <Filter size={18} />
+                  </button>
+                </div>
+
+                {/* Filter Panel */}
+                {showFilters && (
+                  <div className="mt-3 p-4 bg-zinc-900/50 border border-zinc-800 rounded-xl space-y-3">
+                    <div className="grid grid-cols-1 sm:grid-cols-3 gap-3">
+                      {/* Sender Filter */}
+                      <div>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">AVSENDAR</label>
+                        <select
+                          value={filterSender}
+                          onChange={(e) => setFilterSender(e.target.value)}
+                          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
+                        >
+                          <option value="all">Alle</option>
+                          <option value="KRONPRINSESSEN">Kronprinsessen</option>
+                          <option value="EPSTEIN">Epstein</option>
+                          <option value="BORIS NIKOLIC">Boris Nikolic</option>
+                        </select>
+                      </div>
+
+                      {/* Date Range */}
+                      <div>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">FRÅ DATO</label>
+                        <input
+                          type="date"
+                          value={dateRange.start}
+                          onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
+                        />
+                      </div>
+                      <div>
+                        <label className="text-xs text-zinc-500 mb-1.5 block">TIL DATO</label>
+                        <input
+                          type="date"
+                          value={dateRange.end}
+                          onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                          className="w-full px-3 py-2 bg-zinc-800 border border-zinc-700 rounded-lg text-sm text-white focus:outline-none focus:ring-1 focus:ring-white"
+                        />
+                      </div>
+                    </div>
+
+                    {/* View Mode Toggle */}
+                    <div className="flex items-center gap-2 pt-2 border-t border-zinc-800">
+                      <span className="text-xs text-zinc-500 mr-2">VISNING:</span>
+                      <button
+                        onClick={() => setViewMode('list')}
+                        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewMode === 'list' ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+                      >
+                        Liste
+                      </button>
+                      <button
+                        onClick={() => setViewMode('timeline')}
+                        className={`px-3 py-1.5 text-xs rounded-lg transition-colors ${viewMode === 'timeline' ? 'bg-white text-black' : 'bg-zinc-800 text-zinc-400 hover:text-white'}`}
+                      >
+                        Tidslinje
+                      </button>
+                    </div>
+                  </div>
+                )}
+              </div>
             </div>
           </div>
 
           {/* Search Results */}
           <div className="flex-1 overflow-y-auto p-4 scrollbar-hide">
-            <div className="max-w-4xl mx-auto space-y-4">
+            <div className="max-w-4xl mx-auto">
+              {/* Timeline View */}
+              {viewMode === 'timeline' ? (
+                <div className="space-y-8">
+                  {[...highlightedRecords, ...otherRecords]
+                    .sort((a, b) => new Date(a.Sent).getTime() - new Date(b.Sent).getTime())
+                    .reduce((acc, record) => {
+                      const year = new Date(record.Sent).getFullYear();
+                      if (!acc[year]) acc[year] = [];
+                      acc[year].push(record);
+                      return acc;
+                    }, {} as Record<number, EmailRecord[]>)
+                    && Object.entries(
+                      [...highlightedRecords, ...otherRecords]
+                        .sort((a, b) => new Date(a.Sent).getTime() - new Date(b.Sent).getTime())
+                        .reduce((acc, record) => {
+                          const year = new Date(record.Sent).getFullYear();
+                          if (!acc[year]) acc[year] = [];
+                          acc[year].push(record);
+                          return acc;
+                        }, {} as Record<number, EmailRecord[]>)
+                    ).map(([year, yearRecords]) => (
+                      <div key={year}>
+                        <div className="flex items-center gap-4 mb-4">
+                          <div className="text-2xl font-semibold text-white">{year}</div>
+                          <div className="flex-1 h-px bg-zinc-800"></div>
+                          <div className="text-xs text-zinc-600">{yearRecords.length} meldingar</div>
+                        </div>
+                        <div className="relative pl-8 space-y-4">
+                          <div className="absolute left-0 top-0 bottom-0 w-px bg-zinc-800"></div>
+                          {yearRecords.map((record, idx) => (
+                            <div key={`timeline-${record.FileName}-${idx}`} className="relative">
+                              <div className="absolute left-[-33px] top-3 w-2 h-2 rounded-full bg-white"></div>
+                              <div
+                                onClick={() => handleRecordClick(record)}
+                                className="bg-zinc-900/50 border border-zinc-800 rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer"
+                              >
+                                <div className="flex items-start justify-between gap-4 mb-2">
+                                  <div className="flex items-center gap-2">
+                                    <span className="text-xs text-zinc-500">{formatDate(record.Sent)}</span>
+                                    {record.tag && (
+                                      <span className="px-2 py-0.5 text-[10px] font-medium bg-white/10 border border-white/20 rounded uppercase tracking-wider">
+                                        {record.tag}
+                                      </span>
+                                    )}
+                                  </div>
+                                </div>
+                                <div className="text-[10px] text-zinc-500 uppercase tracking-wider mb-1">
+                                  {formatSender(record.From)} → {formatSender(record.To)}
+                                </div>
+                                <p className="text-sm text-zinc-200 leading-relaxed line-clamp-2">
+                                  "{record.Content.slice(0, 150)}{record.Content.length > 150 ? '...' : ''}"
+                                </p>
+                              </div>
+                            </div>
+                          ))}
+                        </div>
+                      </div>
+                    ))}
+                </div>
+              ) : (
+                /* List View */
+                <div className="space-y-4">
               {/* Highlighted messages */}
               {highlightedRecords.map((record, idx) => (
                 <div
@@ -551,7 +793,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                       <span className="font-mono">{record.FileName}</span>
                     </div>
                     <button
-                      onClick={() => setSelectedRecord(record)}
+                      onClick={() => handleRecordClick(record)}
                       className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white transition-colors"
                     >
                       FULL MELDING <ChevronRight size={14} />
@@ -593,7 +835,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                       <span className="font-mono">{record.FileName}</span>
                     </div>
                     <button
-                      onClick={() => setSelectedRecord(record)}
+                      onClick={() => handleRecordClick(record)}
                       className="flex items-center gap-1 text-xs text-zinc-400 hover:text-white transition-colors"
                     >
                       FULL MELDING <ChevronRight size={14} />
@@ -605,6 +847,8 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
               {highlightedRecords.length === 0 && otherRecords.length === 0 && (
                 <div className="text-center py-12 text-zinc-500">
                   Ingen meldingar funne for "{searchQuery}"
+                </div>
+              )}
                 </div>
               )}
             </div>
