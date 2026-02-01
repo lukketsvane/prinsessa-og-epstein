@@ -210,15 +210,24 @@ Eksterne lenker:
 
 VIKTIGE INSTRUKSJONAR FOR SVAR:
 1. Svar ALLTID pa NORSK (nynorsk eller bokmal).
-2. Siter alltid kjelda presist ved a bruke filnamnet (t.d. EFTA01754699.pdf).
-3. Nar du siterer ein e-post, MA du lage ei lenkje til arkivet.
-   Bruk folgjande URL som base: ${ARCHIVE_BASE}
 
-   Eksempel pa korleis du skal formatere sitat:
-   "I ein e-post fra 22. november 2012 skriv Kronprinsessen: 'Yes there are.' (Kjelde: [EFTA01754699.pdf](${ARCHIVE_BASE}))"
+2. HYPERLENKJER - KRITISK VIKTIG:
+   - KVART EINASTE filnamn (EFTA-nummer) MA vere ei klikkbar lenkje
+   - Bruk ALLTID markdown-format: [EFTA01754699.pdf](${ARCHIVE_BASE})
+   - Aldri nemn eit filnamn utan lenkje
+   - Eksempel: "I [EFTA01754699.pdf](${ARCHIVE_BASE}) skriv Kronprinsessen: 'Yes there are.'"
 
-   Det er viktig at du brukar markdown-formatet [Filnamn](URL) slik at brukaren kan klikke seg vidare til det fullstendige arkivet.
+3. KRONOLOGISK KONTEKST - Vis heilskapsbilete:
+   - Nar du svarar, finn FLEIRE relevante meldingar (3-5 stk om mogleg)
+   - Presenter dei kronologisk for a vise utviklinga over tid
+   - Lag ei narrativ kjede som viser samanhengen mellom meldingane
+   - Eksempel: "Dette temaet strekkjer seg over fleire meldingar:
+     - 10. des 2012: I [EFTA00646552.pdf](${ARCHIVE_BASE}) skriv ho 'Called u today'
+     - 22. nov 2012: I [EFTA01754699.pdf](${ARCHIVE_BASE}) svarar ho 'Yes there are'
+     - 24. okt 2012: I [EFTA01772124.pdf](${ARCHIVE_BASE}) reflekterer ho over..."
+
 4. Viss du ikkje finn informasjonen i datasettet, sei: "Eg finn ikkje den informasjonen i det tilgjengelege arkivet."
+
 5. Ver kortfatta, presis og noytral. Ikkje spekuler utover det som star i teksten.
 `;
   }, []);
