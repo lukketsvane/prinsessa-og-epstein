@@ -850,7 +850,6 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
             </div>
           </div>
         </div>
-      </div>
 
       {/* Floating Chatbot (Large Screens Only) */}
       {chatbotOpen && (
