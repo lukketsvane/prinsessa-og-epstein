@@ -206,8 +206,64 @@ export default function App() {
   const [chatbotOpen, setChatbotOpen] = useState(false);
   const [chatbotMinimized, setChatbotMinimized] = useState(false);
   const [isLargeScreen, setIsLargeScreen] = useState(false);
+  const [semanticResults, setSemanticResults] = useState<EmailRecord[]>([]);
+  const [isSearching, setIsSearching] = useState(false);
+  const [searchMode, setSearchMode] = useState<'basic' | 'semantic'>('semantic');
 
   const chatRef = useRef<any>(null);
+  const searchTimeoutRef = useRef<NodeJS.Timeout | null>(null);
+
+  // Semantic search with debounce
+  useEffect(() => {
+    if (searchTimeoutRef.current) {
+      clearTimeout(searchTimeoutRef.current);
+    }
+
+    if (!searchQuery.trim() || searchMode !== 'semantic') {
+      setSemanticResults([]);
+      return;
+    }
+
+    setIsSearching(true);
+    searchTimeoutRef.current = setTimeout(async () => {
+      try {
+        const res = await fetch('/api/search', {
+          method: 'POST',
+          headers: {
+            'Content-Type': 'application/json',
+            ...(apiKey ? { 'X-API-Key': apiKey } : {})
+          },
+          body: JSON.stringify({
+            query: searchQuery,
+            filters: {
+              sender: filterSender !== 'all' ? filterSender : undefined,
+              dateStart: dateRange.start || undefined,
+              dateEnd: dateRange.end || undefined
+            }
+          })
+        });
+        const data = await res.json();
+        if (data.results) {
+          // Map results to include tags from HIGHLIGHTS
+          const resultsWithTags = data.results.map((r: any) => {
+            const highlight = HIGHLIGHTS.find(h => h.fileName === r.FileName);
+            return { ...r, tag: highlight?.tag, notionPageId: highlight?.notionPageId };
+          });
+          setSemanticResults(resultsWithTags);
+        }
+      } catch (err) {
+        console.error('Semantic search error:', err);
+      } finally {
+        setIsSearching(false);
+      }
+    }, 500);
+
+    return () => {
+      if (searchTimeoutRef.current) {
+        clearTimeout(searchTimeoutRef.current);
+      }
+    };
+  }, [searchQuery, filterSender, dateRange, searchMode, apiKey]);
 
   // Handle responsive layout - switch to mobile view on resize
   useEffect(() => {
@@ -229,6 +285,11 @@ export default function App() {
   const records = useMemo(() => parseCSV(KNOWLEDGE_BASE_CSV), []);
 
   const { highlightedRecords, otherRecords } = useMemo(() => {
+    // Use semantic results if available and in semantic mode
+    if (searchQuery.trim() && searchMode === 'semantic' && semanticResults.length > 0) {
+      return { highlightedRecords: [], otherRecords: semanticResults };
+    }
+
     let filtered = [...records];
 
     // Apply sender filter
@@ -249,8 +310,8 @@ export default function App() {
       });
     }
 
-    // Apply search query with semantic scoring
-    if (searchQuery.trim()) {
+    // Apply search query with basic scoring (fallback)
+    if (searchQuery.trim() && searchMode === 'basic') {
       const scored = filtered
         .map(r => ({ record: r, score: scoreRecord(r, searchQuery) }))
         .filter(item => item.score > 0)
@@ -264,7 +325,7 @@ export default function App() {
     const highlighted = HIGHLIGHTS.map(h => filtered.find(r => r.FileName === h.fileName)).filter(Boolean) as EmailRecord[];
     const others = filtered.filter(r => !r.tag);
     return { highlightedRecords: highlighted, otherRecords: others };
-  }, [records, searchQuery, filterSender, dateRange]);
+  }, [records, searchQuery, filterSender, dateRange, searchMode, semanticResults]);
 
   const getSystemInstruction = useCallback(() => {
     return `Du er ein objektiv dataanalytiker som har tilgang til eit spesifikt arkiv av e-postar mellom Kronprinsessen og Jeffrey Epstein (og relaterte partar).
@@ -665,52 +726,96 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
             </button>
           </div>
 
+          {/* Search Mode */}
+          <div className="p-4 border-t border-zinc-800">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-600 mb-2">Søkemodus</div>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setSearchMode('semantic')}
+                className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${searchMode === 'semantic' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
+              >
+                AI-søk
+              </button>
+              <button
+                onClick={() => setSearchMode('basic')}
+                className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${searchMode === 'basic' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
+              >
+                Enkel
+              </button>
+            </div>
+            {isSearching && (
+              <div className="text-[10px] text-zinc-500 mt-1 animate-pulse">Søker...</div>
+            )}
+          </div>
+
           {/* Filters */}
           <div className="p-4 border-t border-zinc-800">
-            <div className="space-y-2">
-              <div className="text-[10px] uppercase tracking-wider text-zinc-600 mb-2">Filter</div>
+            <div className="space-y-3">
+              <div className="text-[10px] uppercase tracking-wider text-zinc-600">Filtrer etter</div>
 
-              <select
-                value={filterSender}
-                onChange={(e) => setFilterSender(e.target.value)}
-                className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
-              >
-                <option value="all">Alle avsendarar</option>
-                <option value="KRONPRINSESSEN">Kronprinsessen</option>
-                <option value="EPSTEIN">Epstein</option>
-                <option value="BORIS NIKOLIC">Boris Nikolic</option>
-              </select>
-
-              <input
-                type="date"
-                value={dateRange.start}
-                onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
-                placeholder="Frå dato"
-                className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
-              />
-
-              <input
-                type="date"
-                value={dateRange.end}
-                onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
-                placeholder="Til dato"
-                className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
-              />
-
-              <div className="flex gap-1 pt-2">
-                <button
-                  onClick={() => setViewMode('list')}
-                  className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${viewMode === 'list' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
+              <div>
+                <label className="text-[10px] text-zinc-500 mb-1 block">Avsendar</label>
+                <select
+                  value={filterSender}
+                  onChange={(e) => setFilterSender(e.target.value)}
+                  className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-xs text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
                 >
-                  Liste
-                </button>
-                <button
-                  onClick={() => setViewMode('timeline')}
-                  className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${viewMode === 'timeline' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
-                >
-                  Tidslinje
-                </button>
+                  <option value="all">Alle</option>
+                  <option value="KRONPRINSESSEN">Kronprinsessen</option>
+                  <option value="EPSTEIN">Epstein</option>
+                  <option value="BORIS NIKOLIC">Boris Nikolic</option>
+                  <option value="LESLEY GROFF">Lesley Groff</option>
+                </select>
               </div>
+
+              <div>
+                <label className="text-[10px] text-zinc-500 mb-1 block">Tidsperiode</label>
+                <div className="grid grid-cols-2 gap-1">
+                  <input
+                    type="date"
+                    value={dateRange.start}
+                    onChange={(e) => setDateRange({ ...dateRange, start: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
+                  />
+                  <input
+                    type="date"
+                    value={dateRange.end}
+                    onChange={(e) => setDateRange({ ...dateRange, end: e.target.value })}
+                    className="w-full px-2 py-1.5 bg-zinc-900 border border-zinc-800 rounded text-[10px] text-zinc-300 focus:outline-none focus:ring-1 focus:ring-zinc-700"
+                  />
+                </div>
+              </div>
+
+              {(filterSender !== 'all' || dateRange.start || dateRange.end) && (
+                <button
+                  onClick={() => {
+                    setFilterSender('all');
+                    setDateRange({ start: '', end: '' });
+                  }}
+                  className="w-full px-2 py-1 text-[10px] text-zinc-500 hover:text-white transition-colors"
+                >
+                  Nullstill filter
+                </button>
+              )}
+            </div>
+          </div>
+
+          {/* View Mode */}
+          <div className="p-4 border-t border-zinc-800">
+            <div className="text-[10px] uppercase tracking-wider text-zinc-600 mb-2">Visning</div>
+            <div className="flex gap-1">
+              <button
+                onClick={() => setViewMode('list')}
+                className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${viewMode === 'list' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
+              >
+                Liste
+              </button>
+              <button
+                onClick={() => setViewMode('timeline')}
+                className={`flex-1 px-2 py-1.5 text-[10px] rounded transition-colors ${viewMode === 'timeline' ? 'bg-white text-black' : 'bg-zinc-900 text-zinc-400 hover:text-white'}`}
+              >
+                Tidslinje
+              </button>
             </div>
           </div>
         </aside>
