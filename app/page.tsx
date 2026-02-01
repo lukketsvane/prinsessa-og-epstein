@@ -4,7 +4,7 @@ import React, { useState, useEffect, useRef, useCallback, useMemo } from 'react'
 import { GoogleGenAI } from "@google/genai";
 import { KNOWLEDGE_BASE_CSV } from './constants';
 import { Message, LoadingState } from './types';
-import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink, Filter, Calendar, MessageSquare, Inbox, Star, Menu, Minimize2, Maximize2, Circle } from 'lucide-react';
+import { Info, Github, Key, Trash2, Send, ChevronRight, ChevronLeft, Search, FileText, X, ExternalLink, Filter, Calendar, MessageSquare, Inbox, Star, Menu, Minimize2, Maximize2, Circle, Copy, Check } from 'lucide-react';
 
 const ARCHIVE_BASE = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb";
 
@@ -125,6 +125,12 @@ function getMessageUrl(record: EmailRecord): string {
     return `${ARCHIVE_BASE}&p=${record.notionPageId}&pm=s`;
   }
   return ARCHIVE_BASE;
+}
+
+function getPdfUrl(fileName: string): string {
+  // Link to Notion database filtered by filename for direct PDF access
+  const baseUrl = 'https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b';
+  return `${baseUrl}?v=2fa1c6815f788079b30a000c89dfd6cb&q=${encodeURIComponent(fileName.replace('.pdf', ''))}`;
 }
 
 function formatDate(dateStr: string): string {
@@ -267,6 +273,21 @@ export default function App() {
 
   const markAsRead = (fileName: string) => {
     setReadMessages(prev => new Set([...prev, fileName]));
+  };
+
+  const [copiedId, setCopiedId] = useState<string | null>(null);
+
+  const copyToClipboard = async (record: EmailRecord, e: React.MouseEvent) => {
+    e.stopPropagation();
+    const shareUrl = `https://prinsessa-og-epstein.iverfinne.no/?search=${encodeURIComponent(record.FileName.replace('.pdf', ''))}`;
+    const shareText = `${formatSender(record.From)} (${formatDate(record.Sent)}): "${record.Content.slice(0, 100)}${record.Content.length > 100 ? '...' : ''}" ${shareUrl}`;
+    try {
+      await navigator.clipboard.writeText(shareText);
+      setCopiedId(record.FileName);
+      setTimeout(() => setCopiedId(null), 2000);
+    } catch (err) {
+      console.error('Failed to copy:', err);
+    }
   };
 
   // Semantic search with debounce
@@ -657,6 +678,13 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                 </button>
               </div>
               <div className="flex items-center gap-2">
+                <button
+                  onClick={(e) => copyToClipboard(selectedRecord, e)}
+                  className="p-2 rounded-full hover:bg-white/10 transition-colors"
+                  aria-label="Kopier lenke"
+                >
+                  {copiedId === selectedRecord.FileName ? <Check size={18} className="text-green-400" /> : <Copy size={18} />}
+                </button>
                 <a
                   href={getMessageUrl(selectedRecord)}
                   target="_blank"
@@ -935,7 +963,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                 </div>
               ) : (
                 /* List View */
-                <div className="space-y-4">
+                <div className="space-y-3 lg:space-y-1">
               {/* All messages */}
               {[...highlightedRecords, ...otherRecords].map((record, idx) => {
                 const isRead = readMessages.has(record.FileName);
@@ -944,45 +972,96 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
                   <div
                     key={`msg-${record.FileName}-${idx}`}
                     onClick={() => handleRecordClick(record)}
-                    className={`border rounded-xl p-4 hover:border-zinc-700 transition-colors cursor-pointer ${
+                    className={`border rounded-lg lg:rounded-md p-3 lg:p-2.5 lg:py-2 hover:border-zinc-700 transition-colors cursor-pointer ${
                       isRead ? 'bg-zinc-900/30 border-zinc-800/50' : 'bg-zinc-900/50 border-zinc-800'
                     }`}
                   >
-                    <div className="flex items-start justify-between gap-4 mb-2">
-                      <div className="flex items-center gap-2">
-                        {!isRead && (
-                          <Circle size={8} className="text-blue-400 fill-blue-400" />
-                        )}
-                        <span className={`text-xs ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
-                          {formatDate(record.Sent)}
-                        </span>
-                      </div>
+                    {/* Desktop compact row layout */}
+                    <div className="hidden lg:flex items-center gap-3">
                       <button
                         onClick={(e) => toggleStarred(record.FileName, e)}
-                        className={`p-1 rounded hover:bg-zinc-800 transition-colors ${
+                        className={`flex-shrink-0 p-0.5 rounded hover:bg-zinc-800 transition-colors ${
                           isStarred ? 'text-yellow-400' : 'text-zinc-600 hover:text-zinc-400'
                         }`}
                       >
                         <Star size={14} className={isStarred ? 'fill-yellow-400' : ''} />
                       </button>
-                    </div>
-
-                    <div className={`text-[10px] uppercase tracking-wider mb-1 ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
-                      FRA: {formatSender(record.From)}
-                    </div>
-
-                    <p className={`text-sm italic leading-relaxed mb-3 line-clamp-3 ${isRead ? 'text-zinc-400' : 'text-zinc-200'}`}>
-                      "{record.Content.slice(0, 200)}{record.Content.length > 200 ? '...' : ''}"
-                    </p>
-
-                    <div className="flex items-center justify-between">
-                      <div className="flex items-center gap-1.5 text-xs text-zinc-600">
-                        <FileText size={12} />
-                        <span className="font-mono">{record.FileName}</span>
-                      </div>
-                      <span className="flex items-center gap-1 text-xs text-zinc-400">
-                        VIS TRÅD <ChevronRight size={14} />
+                      {!isRead && <Circle size={6} className="flex-shrink-0 text-blue-400 fill-blue-400" />}
+                      <span className={`flex-shrink-0 w-28 text-[11px] font-medium truncate ${isRead ? 'text-zinc-500' : 'text-zinc-300'}`}>
+                        {formatSender(record.From)}
                       </span>
+                      <p className={`flex-1 text-[11px] truncate ${isRead ? 'text-zinc-500' : 'text-zinc-300'}`}>
+                        {record.Content.slice(0, 100)}
+                      </p>
+                      <a
+                        href={getPdfUrl(record.FileName)}
+                        target="_blank"
+                        rel="noopener noreferrer"
+                        onClick={(e) => e.stopPropagation()}
+                        className="flex-shrink-0 text-[10px] font-mono text-zinc-600 hover:text-zinc-400 hover:underline"
+                      >
+                        {record.FileName}
+                      </a>
+                      <span className={`flex-shrink-0 text-[10px] w-20 text-right ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                        {formatDate(record.Sent)}
+                      </span>
+                      <button
+                        onClick={(e) => copyToClipboard(record, e)}
+                        className="flex-shrink-0 p-0.5 rounded hover:bg-zinc-800 transition-colors text-zinc-600 hover:text-zinc-400"
+                        title="Kopier lenke"
+                      >
+                        {copiedId === record.FileName ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                      </button>
+                    </div>
+
+                    {/* Mobile card layout */}
+                    <div className="lg:hidden">
+                      <div className="flex items-start justify-between gap-4 mb-2">
+                        <div className="flex items-center gap-2">
+                          {!isRead && <Circle size={8} className="text-blue-400 fill-blue-400" />}
+                          <span className={`text-xs ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                            {formatDate(record.Sent)}
+                          </span>
+                        </div>
+                        <div className="flex items-center gap-1">
+                          <button
+                            onClick={(e) => copyToClipboard(record, e)}
+                            className="p-1 rounded hover:bg-zinc-800 transition-colors text-zinc-600 hover:text-zinc-400"
+                            title="Kopier lenke"
+                          >
+                            {copiedId === record.FileName ? <Check size={14} className="text-green-400" /> : <Copy size={14} />}
+                          </button>
+                          <button
+                            onClick={(e) => toggleStarred(record.FileName, e)}
+                            className={`p-1 rounded hover:bg-zinc-800 transition-colors ${
+                              isStarred ? 'text-yellow-400' : 'text-zinc-600 hover:text-zinc-400'
+                            }`}
+                          >
+                            <Star size={14} className={isStarred ? 'fill-yellow-400' : ''} />
+                          </button>
+                        </div>
+                      </div>
+                      <div className={`text-[10px] uppercase tracking-wider mb-1 ${isRead ? 'text-zinc-600' : 'text-zinc-500'}`}>
+                        FRA: {formatSender(record.From)}
+                      </div>
+                      <p className={`text-sm italic leading-relaxed mb-3 line-clamp-2 ${isRead ? 'text-zinc-400' : 'text-zinc-200'}`}>
+                        "{record.Content.slice(0, 150)}{record.Content.length > 150 ? '...' : ''}"
+                      </p>
+                      <div className="flex items-center justify-between">
+                        <a
+                          href={getPdfUrl(record.FileName)}
+                          target="_blank"
+                          rel="noopener noreferrer"
+                          onClick={(e) => e.stopPropagation()}
+                          className="flex items-center gap-1.5 text-xs text-zinc-600 hover:text-zinc-400"
+                        >
+                          <FileText size={12} />
+                          <span className="font-mono hover:underline">{record.FileName}</span>
+                        </a>
+                        <span className="flex items-center gap-1 text-xs text-zinc-400">
+                          VIS TRÅD <ChevronRight size={14} />
+                        </span>
+                      </div>
                     </div>
                   </div>
                 );
