@@ -871,11 +871,11 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
           </div>
         </div>
 
-      {/* Floating Chatbot (Large Screens Only) */}
+      {/* Chatbot - Full screen on mobile, floating on desktop */}
       {chatbotOpen && (
-        <div className="hidden lg:block fixed bottom-4 right-4 z-50">
-          <div className={`bg-zinc-950 border border-zinc-800 rounded-2xl shadow-2xl transition-all ${
-            chatbotMinimized ? 'w-80 h-14' : 'w-96 h-[600px]'
+        <div className="fixed inset-0 lg:inset-auto lg:bottom-4 lg:right-4 z-50">
+          <div className={`bg-zinc-950 lg:border lg:border-zinc-800 lg:rounded-2xl shadow-2xl transition-all w-full h-full lg:w-96 ${
+            chatbotMinimized ? 'lg:h-14' : 'lg:h-[600px]'
           }`}>
             {/* Chat Header */}
             <div className="flex items-center justify-between p-4 border-b border-zinc-800">
@@ -902,7 +902,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
             {!chatbotMinimized && (
               <>
                 {/* Chat Messages */}
-                <div className="flex-1 overflow-y-auto p-4 h-[480px] scrollbar-hide">
+                <div className="flex-1 overflow-y-auto p-4 h-[calc(100vh-130px)] lg:h-[480px] scrollbar-hide">
                   <div className="space-y-4">
                     {messages.map((msg) => (
                       <div key={msg.id} className={`flex ${msg.role === 'user' ? 'justify-end' : 'justify-start'}`}>
@@ -981,7 +981,7 @@ VIKTIGE INSTRUKSJONAR FOR SVAR:
       {!chatbotOpen && (
         <button
           onClick={() => setChatbotOpen(true)}
-          className="hidden lg:flex fixed bottom-6 right-6 w-14 h-14 bg-white text-black rounded-full items-center justify-center shadow-lg hover:bg-gray-200 transition-all z-50"
+          className="flex fixed bottom-6 right-6 w-14 h-14 bg-white text-black rounded-full items-center justify-center shadow-lg hover:bg-gray-200 transition-all z-50"
         >
           <MessageSquare size={24} />
         </button>
