@@ -16,9 +16,26 @@ interface Message {
   Sent: string
   Subject: string
   Content: string
+  content_cleaned?: string
 }
 
-const NOTION_URL = "https://tingogtang.notion.site/2fa1c6815f788087a468d87a86e5522b?v=2fa1c6815f788079b30a000c89dfd6cb&source=copy_link"
+const NOTION_URL = "https://tingogtang.notion.site/Prinsessa-og-Epstein-2f91c6815f7880918c15f02cc8882b28"
+
+// Function to clean content if content_cleaned is missing
+function cleanMessageContent(content: string): string {
+  if (!content) return ''
+  
+  // Remove XML/Plist snippets
+  let cleaned = content.replace(/<\?xml[\s\S]*?<\/plist>/g, '')
+  
+  // Remove other common metadata patterns seen in the user's example
+  cleaned = cleaned.replace(/\d+\s+EFTA_R1_\d+\s+EFTA\d+/g, '')
+  
+  // Clean up excessive whitespace
+  cleaned = cleaned.replace(/\s+/g, ' ').trim()
+  
+  return cleaned
+}
 
 export default function ChatPage() {
   const [messages, setMessages] = useState<Message[]>([])
@@ -35,8 +52,11 @@ export default function ChatPage() {
           header: true,
           skipEmptyLines: true,
           complete: (res) => {
-            const data = res.data as Message[]
-            setMessages(data)
+            const data = (res.data as Message[]).map(m => ({
+              ...m,
+              displayContent: m.content_cleaned || cleanMessageContent(m.Content)
+            }))
+            setMessages(data as any)
           }
         })
       })
@@ -47,8 +67,8 @@ export default function ChatPage() {
     if (!query.trim()) return
     
     const term = query.toLowerCase()
-    const filtered = messages.filter(m => 
-      m.Content?.toLowerCase().includes(term) || 
+    const filtered = messages.filter((m: any) => 
+      m.displayContent?.toLowerCase().includes(term) || 
       m.From?.toLowerCase().includes(term) ||
       m.Subject?.toLowerCase().includes(term)
     )
@@ -90,32 +110,11 @@ export default function ChatPage() {
           <div className="w-full max-w-4xl mx-auto px-6 pb-32">
             {!hasSearched ? (
               <div className="pt-12 space-y-12 animate-in fade-in duration-1000">
-                {/* Banner Integration */}
-                <div className="relative w-full aspect-[21/9] overflow-hidden rounded-2xl border border-zinc-800 shadow-2xl">
-                  <Image 
-                    src="/banner.png" 
-                    alt="Banner" 
-                    fill 
-                    className="object-cover grayscale hover:grayscale-0 transition-all duration-700"
-                    priority
-                  />
-                  <div className="absolute inset-0 bg-gradient-to-t from-black via-transparent to-transparent opacity-60" />
-                  <div className="absolute bottom-6 left-8">
-                    <Badge className="bg-white text-black font-bold px-3 py-1 mb-2">ARKIV 2026</Badge>
-                    <h2 className="text-2xl font-bold text-white tracking-tight">Dokumentasjon & Korrespondanse</h2>
-                  </div>
-                </div>
+  
 
                 <div className="flex flex-col items-center justify-center py-12 text-center space-y-4">
-                  <div className="p-4 rounded-full bg-zinc-900/50 border border-zinc-800">
-                    <MessageCircle size={32} className="text-zinc-500" strokeWidth={1.5} />
-                  </div>
-                  <div className="space-y-2">
-                    <h3 className="text-xl font-medium text-zinc-200">Søk i arkivet</h3>
-                    <p className="text-zinc-500 max-w-xs mx-auto text-sm leading-relaxed">
-                      Skriv inn et søkeord nedenfor for å utforske de lekkede meldingene.
-                    </p>
-                  </div>
+
+
                 </div>
               </div>
             ) : (
@@ -127,7 +126,7 @@ export default function ChatPage() {
                 </div>
 
                 <div className="grid gap-6">
-                  {results.map((msg, i) => (
+                  {results.map((msg: any, i) => (
                     <div key={i} className="group">
                       <div className="bg-zinc-900/30 border border-zinc-800/50 hover:border-zinc-700/50 transition-all rounded-2xl p-6 space-y-4 shadow-sm">
                         <div className="flex flex-col md:flex-row md:items-center justify-between gap-4">
@@ -144,7 +143,7 @@ export default function ChatPage() {
                         </div>
                         
                         <div className="text-lg leading-relaxed font-serif italic text-zinc-300 px-2 border-l-2 border-zinc-800 group-hover:border-zinc-600 transition-colors">
-                          "{msg.Content}"
+                          "{msg.displayContent}"
                         </div>
 
                         <div className="flex items-center justify-between pt-4 border-t border-zinc-800/30">
@@ -179,7 +178,7 @@ export default function ChatPage() {
           <Button 
             variant="outline" 
             size="icon" 
-            className="rounded-full h-12 w-12 bg-zinc-950 border-zinc-800 hover:bg-zinc-900 hover:border-zinc-700 shadow-2xl transition-all active:scale-90 group"
+            className="rounded-full h-12 w-12 bg-zinc-950 border-zinc-800 hover:bg-zinc-800 hover:border-zinc-700 shadow-2xl transition-all active:scale-90 group"
             asChild
           >
             <a href={NOTION_URL} target="_blank" rel="noreferrer">
