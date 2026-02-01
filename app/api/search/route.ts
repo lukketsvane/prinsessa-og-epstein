@@ -84,7 +84,7 @@ export async function POST(req: Request) {
 
   const apiKey = (apiKeyHeader && apiKeyHeader.trim() !== '')
     ? apiKeyHeader
-    : (process.env.GEMINI_API_KEY || 'AIzaSyDDUY8rCczYKtoaFh7ZjYa7SqTNtNOpe1s')
+    : process.env.GEMINI_API_KEY
 
   if (!apiKey) {
     return new Response("Missing API Key", { status: 401 })
